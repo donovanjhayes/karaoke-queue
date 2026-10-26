@@ -153,6 +153,27 @@
   .backdrop{position:fixed;inset:0;background:#05030cc4;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;animation:fade .15s}
   .modal{width:100%;max-width:520px;max-height:92vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:0 20px 60px #000a;animation:pop .18s}
   .modal h2{margin:0 0 6px;font-size:22px}
+  .modal.wide{max-width:760px;padding-bottom:0}
+  .imp-choice{display:flex;align-items:center;gap:14px;padding:16px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);width:100%;text-align:left}
+  .imp-choice .ico{font-size:30px}
+  .imp-list{margin:10px -6px 0;padding:0}
+  .imp-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:12px}
+  .imp-row+.imp-row{border-top:1px solid #ffffff0c}
+  .imp-row.off{opacity:.45}
+  .cb{width:30px;height:30px;border-radius:8px;border:2px solid var(--muted);flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;color:#fff}
+  .cb.on{background:var(--pink);border-color:var(--pink)}
+  .imp-src{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .imp-change{height:36px;padding:0 12px;border-radius:10px;background:#ffffff10;font-size:13px;font-weight:700;flex:none}
+  .imp-cands{margin:0 0 8px 46px;display:flex;flex-direction:column;gap:6px}
+  .imp-cand{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;background:#0e0a1c;border:1px solid var(--line);text-align:left;width:100%}
+  .imp-cand.sel{border-color:var(--green)}
+  .imp-cand .art,.imp-cand .art-ph{width:40px;height:40px}
+  .imp-foot{position:sticky;bottom:0;background:var(--panel);padding:12px 0 18px;margin-top:10px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
+  .imp-foot .btn{flex:1}
+  textarea.csv{width:100%;min-height:160px;border-radius:12px;border:1.5px solid var(--line);background:#0e0a1c;color:var(--text);font:15px ui-monospace,Menlo,monospace;padding:12px;outline:none;-webkit-user-select:text;user-select:text}
+  .pl-row{display:flex;align-items:center;gap:12px;padding:10px;border-radius:12px;width:100%;text-align:left}
+  .pl-row:active{background:var(--panel2)}
+  .pl-row[disabled]{opacity:.4}
   .modal p{color:var(--muted);margin:6px 0 14px}
   .modal .stack{display:flex;flex-direction:column;gap:10px;margin-top:16px}
   .modal .row2{display:flex;gap:10px}
@@ -282,7 +303,7 @@ const LS = {
   set(k, v){ try{ localStorage.setItem('kq_'+k, JSON.stringify(v)); }catch(e){} },
   del(k){ try{ localStorage.removeItem('kq_'+k); }catch(e){} }
 };
-const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-modify-private playlist-modify-public';
+const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-modify-private playlist-modify-public playlist-read-private playlist-read-collaborative';
 const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/, '');
 const UNLOCK_MS = 2 * 60 * 1000;
 const API = 'https://api.spotify.com/v1';
@@ -361,7 +382,8 @@ async function handleCallback(){
   }catch(e){ toast('Login failed: ' + e.message, 'err'); }
 }
 function setTokens(j){
-  S.tokens = { access: j.access_token, refresh: j.refresh_token || (S.tokens && S.tokens.refresh), expiresAt: Date.now() + (j.expires_in - 60) * 1000 };
+  S.tokens = { access: j.access_token, refresh: j.refresh_token || (S.tokens && S.tokens.refresh), expiresAt: Date.now() + (j.expires_in - 60) * 1000,
+               scope: j.scope != null ? j.scope : (S.tokens && S.tokens.scope) };
   LS.set('tokens', S.tokens);
 }
 let refreshing = null;
@@ -467,9 +489,9 @@ function openPinPad({ title, sub, onDone, setMode }){
 /* =========================================================
    Modals
    ========================================================= */
-function openModal(html, { onClick, onClose, dismissable = true } = {}){
+function openModal(html, { onClick, onClose, dismissable = true, wide = false } = {}){
   const bd = document.createElement('div'); bd.className = 'backdrop';
-  bd.innerHTML = `<div class="modal" role="dialog">${html}</div>`;
+  bd.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog">${html}</div>`;
   $('#modalRoot').appendChild(bd);
   let closed = false;
   const api_ = { el: bd.querySelector('.modal'), close(){ if (closed) return; closed = true; bd.remove(); onClose && onClose(); } };
@@ -796,7 +818,7 @@ function renderTabs(){
 function renderQueue(){
   const el = $('#tabQueue');
   if (!S.queue.length) {
-    el.innerHTML = `<div class="empty"><div class="big">📝</div>Nobody's in line yet.<br>Search for a song and tap it to add it.</div>`;
+    el.innerHTML = `<div class="empty"><div class="big">📝</div>Nobody's in line yet.<br>Search for a song and tap it to add it.<br><br><button class="btn btn-ghost" data-act="import">📥 Import a playlist or CSV ${isUnlocked() ? '' : '🔒'}</button></div>`;
     return;
   }
   const lock = isUnlocked() ? '' : ' 🔒';
@@ -1026,6 +1048,7 @@ async function openSettings(){
   const m = openModal(`
     <h2>⚙︎ Host settings</h2>
     <div class="stack">
+      <button class="btn btn-cyan" data-act="import">📥 Import songs (playlist or CSV)</button>
       <button class="btn btn-ghost" data-act="device">🔈 Change speaker${S.device ? ' (' + esc(S.device.name) + ')' : ''}</button>
       <button class="btn btn-ghost" data-act="pin">🔢 Change host PIN</button>
       <button class="btn btn-ghost" data-act="lock">🔒 Lock host controls now</button>
@@ -1036,11 +1059,12 @@ async function openSettings(){
       <div class="divider"></div>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
-      <div class="info-line">Karaoke Queue v1.2</div>
+      <div class="info-line">Karaoke Queue v1.3</div>
     </div>`, {
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
       if (act === 'device') { mm.close(); openDevicePicker(); }
+      if (act === 'import') { mm.close(); openImport(); }
       if (act === 'lock') { S.unlockedUntil = 0; mm.close(); renderAll(); toast('Host controls locked'); }
       if (act === 'pin') { mm.close(); openPinPad({ title: 'New host PIN', sub: 'At least 4 digits.', setMode: true, onDone: ok => ok && toast('PIN changed', 'ok') }); }
       if (act === 'stop') { S.running = false; save(); mm.close(); renderAll(); toast('The queue will pause after this song'); }
@@ -1081,6 +1105,252 @@ async function saveHistoryPlaylist(){
 /* =========================================================
    Event wiring
    ========================================================= */
+/* =========================================================
+   Import (Spotify playlist or CSV) — host only
+   ========================================================= */
+const CSV_TEMPLATE = 'Song,Artist,Singer,Secret\nDancing Queen,ABBA,Maria,\nBohemian Rhapsody,Queen,The Band,\nI Will Survive,Gloria Gaynor,Agent X,yes\n';
+
+function hasScope(s){ return S.tokens && S.tokens.scope != null ? S.tokens.scope.split(' ').includes(s) : null; }
+async function askReconnect(why){
+  const ok = await confirmDialog({ title: 'Reconnect Spotify?', body: esc(why) + ' Your queue is kept.',
+    buttons: [{ label: 'Reconnect Spotify', value: true, cls: 'btn-primary' }, { label: 'Cancel', value: null }] });
+  if (ok) login();
+}
+
+function openImport(){
+  const m = openModal(`
+    <h2>📥 Import songs</h2>
+    <p>Imported songs are added to the <b style="color:var(--text)">end of the queue</b>.</p>
+    <div class="stack">
+      <button class="imp-choice" data-act="pl"><span class="ico">🎧</span><span><b>From a Spotify playlist</b><div class="t2">Any playlist you own or collaborate on</div></span></button>
+      <button class="imp-choice" data-act="file"><span class="ico">📄</span><span><b>From a CSV file</b><div class="t2">Columns: Song, Artist, Singer (optional), Secret (optional)</div></span></button>
+      <button class="imp-choice" data-act="paste"><span class="ico">📋</span><span><b>Paste CSV text</b><div class="t2">One song per line</div></span></button>
+      <a class="btn btn-ghost" style="text-decoration:none" download="karaoke-template.csv" href="data:text/csv;charset=utf-8,${encodeURIComponent(CSV_TEMPLATE)}">⬇︎ Download a template CSV</a>
+      <button class="btn btn-ghost" data-act="close">Cancel</button>
+    </div>
+    <input type="file" id="csvFile" accept=".csv,.txt,text/csv,text/plain" class="hidden">`, {
+    onClick(act, el, mm){
+      if (act === 'close') mm.close();
+      if (act === 'pl') { mm.close(); openPlaylistPicker(); }
+      if (act === 'paste') { mm.close(); openCsvPaste(); }
+      if (act === 'file') m.el.querySelector('#csvFile').click();
+    }
+  });
+  m.el.querySelector('#csvFile').addEventListener('change', async ev => {
+    const f = ev.target.files && ev.target.files[0]; if (!f) return;
+    const text = await f.text();
+    m.close(); importCsvText(text);
+  });
+}
+
+function openCsvPaste(){
+  const m = openModal(`
+    <h2>📋 Paste CSV</h2>
+    <p>One song per line: <b style="color:var(--text)">Song, Artist, Singer, Secret</b>. Singer and Secret are optional. A header row is fine.</p>
+    <textarea class="csv" id="csvText" placeholder="Dancing Queen, ABBA, Maria&#10;Bohemian Rhapsody, Queen&#10;I Will Survive, Gloria Gaynor, Agent X, yes"></textarea>
+    <div class="stack"><button class="btn btn-primary" data-act="go">Find songs</button><button class="btn btn-ghost" data-act="close">Cancel</button></div>`, {
+    dismissable: false,
+    onClick(act, el, mm){
+      if (act === 'close') mm.close();
+      if (act === 'go') { const t = m.el.querySelector('#csvText').value; if (!t.trim()) return; mm.close(); importCsvText(t); }
+    }
+  });
+}
+
+function parseCSV(text){
+  text = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const firstLine = text.split('\n')[0] || '';
+  const delim = (!firstLine.includes(',') && firstLine.includes('\t')) ? '\t' : (!firstLine.includes(',') && firstLine.includes(';')) ? ';' : ',';
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === delim) { row.push(f); f = ''; }
+    else if (c === '\n') { row.push(f); rows.push(row); row = []; f = ''; }
+    else f += c;
+  }
+  row.push(f); rows.push(row);
+  return rows.map(r => r.map(x => x.trim())).filter(r => r.some(x => x));
+}
+
+function csvToRows(text){
+  const rows = parseCSV(text);
+  if (!rows.length) return [];
+  const H = { song: /^(song|songs|title|song title|track|track name|song name)$/i, artist: /^(artist|artists|artist name|band|by)$/i,
+              label: /^(singer|singers|singer name|label|who|name|performer|code ?name)$/i, hidden: /^(secret|hidden|surprise|secret\?)$/i };
+  let idx = { song: 0, artist: 1, label: 2, hidden: 3 }, start = 0;
+  const head = rows[0];
+  if (head.some(h => H.song.test(h) || H.artist.test(h))) {
+    idx = { song: -1, artist: -1, label: -1, hidden: -1 };
+    head.forEach((h, i) => { for (const k in H) if (idx[k] < 0 && H[k].test(h)) idx[k] = i; });
+    if (idx.song < 0) idx.song = 0;
+    start = 1;
+  }
+  const yes = v => /^(y|yes|true|1|x|✓|✔|secret|hidden)$/i.test(v || '');
+  return rows.slice(start).map(r => ({
+    song: r[idx.song] || '', artist: idx.artist >= 0 ? (r[idx.artist] || '') : '',
+    label: idx.label >= 0 ? (r[idx.label] || '').slice(0, 40) : '', hidden: idx.hidden >= 0 && yes(r[idx.hidden])
+  })).filter(r => r.song);
+}
+
+function normName(s){ return String(s || '').toLowerCase().replace(/\s*[\(\[].*?[\)\]]\s*/g, ' ').replace(/\s+-\s+.*$/, '').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
+async function matchCsvRow(r){
+  const searchFor = async q => {
+    const j = await api('GET', '/search?' + new URLSearchParams({ q, type: 'track', limit: '5' }));
+    return ((j && j.tracks && j.tracks.items) || []).filter(Boolean).map(mapTrack);
+  };
+  let items = await searchFor(r.artist ? `track:${r.song} artist:${r.artist}` : r.song);
+  if (!items.length && r.artist) items = await searchFor(`${r.song} ${r.artist}`);
+  // prefer an exact title match, then the same title with extras like "- Remastered"
+  const raw = r.song.trim().toLowerCase(), want = normName(r.song);
+  const score = t => t.name.trim().toLowerCase() === raw ? 0 : normName(t.name) === want ? 1 : 2;
+  return items.map((t, i) => [score(t), i, t]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
+}
+
+async function importCsvText(text){
+  const rows = csvToRows(text);
+  if (!rows.length) { toast('No songs found in that CSV. The first column should be the song title.', 'err'); return; }
+  if (rows.length > 150) { toast(`That's ${rows.length} rows — importing the first 150.`); rows.length = 150; }
+  let cancelled = false;
+  const m = openModal(`<h2>🔎 Finding songs on Spotify…</h2><p id="impProg">0 / ${rows.length}</p>
+    <div class="bar"><i id="impBar"></i></div><div class="stack"><button class="btn btn-ghost" data-act="cancel">Cancel</button></div>`,
+    { dismissable: false, onClick(act, el, mm){ if (act === 'cancel') { cancelled = true; mm.close(); } } });
+  const items = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (cancelled) return;
+    const r = rows[i];
+    let cands = [];
+    try { cands = await matchCsvRow(r); }
+    catch(e){ if (e.status === 429) { await sleep(3000); try { cands = await matchCsvRow(r); } catch(e2){} } }
+    items.push({ src: r, cands, choice: cands.length ? 0 : -1, checked: cands.length > 0, label: r.label, hidden: r.hidden });
+    const pe = m.el.querySelector('#impProg'), be = m.el.querySelector('#impBar');
+    if (pe) pe.textContent = `${i + 1} / ${rows.length}`;
+    if (be) be.style.width = ((i + 1) / rows.length * 100) + '%';
+    await sleep(120);
+  }
+  if (cancelled) return;
+  m.close();
+  openImportReview(items, 'CSV');
+}
+
+async function openPlaylistPicker(){
+  if (hasScope('playlist-read-private') === false) return askReconnect('Spotify needs one more permission so the app can read your playlists.');
+  const m = openModal(`<h2>🎧 Pick a playlist</h2><p>Only playlists you own or collaborate on can be imported (a Spotify rule).</p>
+    <div id="plList"><div class="empty">Loading your playlists…</div></div>
+    <div class="stack"><button class="btn btn-ghost" data-act="close">Cancel</button></div>`, {
+    onClick(act, el, mm){
+      if (act === 'close') mm.close();
+      if (act === 'pl-pick') { const pl = lists[+el.dataset.i]; mm.close(); importPlaylist(pl); }
+    }
+  });
+  let lists = [];
+  try{
+    const me = await api('GET', '/me');
+    for (let off = 0; off < 500; off += 50) {
+      const j = await api('GET', `/me/playlists?limit=50&offset=${off}`);
+      const page = ((j && j.items) || []).filter(Boolean);
+      lists = lists.concat(page);
+      if (!j || !j.next || !page.length) break;
+    }
+    lists = lists.map(p => ({ id: p.id, name: p.name, art: p.images && p.images.length ? p.images[p.images.length - 1].url : '',
+      total: (p.items && p.items.total) != null ? p.items.total : (p.tracks && p.tracks.total) != null ? p.tracks.total : null,
+      mine: (p.owner && p.owner.id === me.id) || p.collaborative, owner: p.owner && (p.owner.display_name || p.owner.id) }));
+    lists.sort((a, b) => (b.mine ? 1 : 0) - (a.mine ? 1 : 0));
+    const box = m.el.querySelector('#plList'); if (!box) return;
+    box.innerHTML = lists.length ? lists.map((p, i) => `
+      <button class="pl-row" data-act="pl-pick" data-i="${i}" ${p.mine ? '' : 'disabled'}>
+        ${artHtml(p.art)}
+        <div class="r-main"><div class="t1">${esc(p.name)}</div>
+        <div class="t2">${p.total != null ? p.total + ' songs' : ''}${p.mine ? '' : ' · by ' + esc(p.owner) + ' — not yours, can’t import'}</div></div>
+      </button>`).join('') : '<div class="empty">No playlists found on this account.</div>';
+  }catch(e){
+    m.close();
+    if (e.status === 403 && /scope/i.test(e.message)) return askReconnect('Spotify needs one more permission so the app can read your playlists.');
+    toast('Couldn’t load playlists: ' + e.message, 'err');
+  }
+}
+
+async function importPlaylist(pl){
+  const m = openModal(`<h2>Loading “${esc(pl.name)}”…</h2><p id="impProg">Getting songs…</p>`, { dismissable: false });
+  const items = [];
+  try{
+    for (let off = 0; off < 2000; off += 50) {
+      const j = await api('GET', `/playlists/${pl.id}/items?limit=50&offset=${off}`);
+      const page = (j && j.items) || [];
+      for (const it of page) {
+        const t = it && (it.item || it.track);
+        if (!t || t.type === 'episode' || !t.uri || t.uri.startsWith('spotify:local') || t.is_local) continue;
+        const tr = mapTrack(t);
+        items.push({ src: null, cands: [tr], choice: 0, checked: true, label: '', hidden: false });
+      }
+      const pe = m.el.querySelector('#impProg'); if (pe) pe.textContent = `${items.length} songs…`;
+      if (!j || !j.next || !page.length) break;
+    }
+  }catch(e){
+    m.close();
+    if (e.status === 403 && /scope/i.test(e.message)) return askReconnect('Spotify needs one more permission so the app can read your playlists.');
+    if (e.status === 403) return toast('Spotify won’t share this playlist’s songs — only playlists you own or collaborate on work.', 'err');
+    return toast('Couldn’t load the playlist: ' + e.message, 'err');
+  }
+  m.close();
+  if (!items.length) return toast('That playlist has no songs that can be played.', 'err');
+  openImportReview(items, pl.name);
+}
+
+function openImportReview(items, sourceName){
+  let open = -1;
+  const inQ = new Set(S.queue.map(e => e.uri)); if (S.now) inQ.add(S.now.uri);
+  const sung = new Set(S.history.map(e => e.uri));
+  const m = openModal(`<h2>Review import</h2><p>From ${esc(sourceName)}. Uncheck anything you don’t want${items.some(x => x.src) ? ', or tap <b style="color:var(--text)">Change</b> to pick a different version' : ''}.</p>
+    <div class="row2" style="margin-bottom:4px"><button class="btn btn-ghost" data-act="all">Select all</button><button class="btn btn-ghost" data-act="none">Select none</button></div>
+    <div id="impList" class="imp-list"></div>
+    <div class="imp-foot"><button class="btn btn-ghost" data-act="cancel" style="flex:0 0 auto">Cancel</button><button class="btn btn-primary" data-act="add" id="impAdd"></button></div>`, {
+    wide: true, dismissable: false,
+    onClick(act, el, mm){
+      const i = +el.dataset.i;
+      if (act === 'cancel') return mm.close();
+      if (act === 'tog') { if (items[i].choice >= 0) items[i].checked = !items[i].checked; }
+      if (act === 'change') open = open === i ? -1 : i;
+      if (act === 'cand') { const it = items[+el.dataset.r]; it.choice = +el.dataset.c; it.checked = it.choice >= 0; open = -1; }
+      if (act === 'all') items.forEach(it => { if (it.choice >= 0) it.checked = true; });
+      if (act === 'none') items.forEach(it => it.checked = false);
+      if (act === 'add') {
+        const picked = items.filter(it => it.checked && it.choice >= 0);
+        if (!picked.length) return;
+        for (const it of picked) S.queue.push(Object.assign({}, it.cands[it.choice], { qid: uid(), label: it.label || '', hidden: !!it.hidden, addedAt: Date.now() }));
+        save(); mm.close(); renderAll();
+        toast(`Added ${picked.length} song${picked.length > 1 ? 's' : ''} to the end of the queue`, 'ok');
+        if (S.running && !S.now) startNext();
+        return;
+      }
+      draw();
+    }
+  });
+  function draw(){
+    const n = items.filter(it => it.checked && it.choice >= 0).length;
+    const btn = m.el.querySelector('#impAdd');
+    btn.textContent = `➕ Add ${n} song${n === 1 ? '' : 's'} to queue`; btn.disabled = !n;
+    m.el.querySelector('#impList').innerHTML = items.map((it, i) => {
+      const t = it.choice >= 0 ? it.cands[it.choice] : null;
+      const tag = t && inQ.has(t.uri) ? '<span class="badge badge-q">IN QUEUE</span>' : t && sung.has(t.uri) ? '<span class="badge badge-h">SUNG</span>' : '';
+      const srcLine = it.src ? `<div class="imp-src">CSV: ${esc(it.src.song)}${it.src.artist ? ' — ' + esc(it.src.artist) : ''}${it.label ? ' · 🎤 ' + esc(it.label) : ''}${it.hidden ? ' · 🤫 secret' : ''}</div>` : '';
+      const row = `<div class="imp-row ${it.checked ? '' : 'off'}">
+        <button class="cb ${it.checked ? 'on' : ''}" data-act="tog" data-i="${i}">${it.checked ? '✓' : ''}</button>
+        ${t ? artHtml(t.art) : '<div class="art-ph">❓</div>'}
+        <div class="r-main">${t ? `<div class="t1">${esc(t.name)}${tag}</div><div class="t2">${esc(t.artists)} · ${fmtDur(t.duration)}</div>` : `<div class="t1" style="color:var(--red)">No match found</div>`}${srcLine}</div>
+        ${it.src && it.cands.length ? `<button class="imp-change" data-act="change" data-i="${i}">${open === i ? 'Close' : 'Change'}</button>` : ''}
+      </div>`;
+      const cands = open === i ? `<div class="imp-cands">${it.cands.map((c, ci) => `
+        <button class="imp-cand ${ci === it.choice ? 'sel' : ''}" data-act="cand" data-r="${i}" data-c="${ci}">${artHtml(c.art)}
+          <div class="r-main"><div class="t1" style="font-size:15px">${esc(c.name)}</div><div class="t2">${esc(c.artists)} · ${fmtDur(c.duration)}</div></div>${ci === it.choice ? '✅' : ''}</button>`).join('')}
+        <button class="imp-cand" data-act="cand" data-r="${i}" data-c="-1"><div class="r-main"><div class="t1" style="font-size:15px;color:var(--muted)">None of these — skip this song</div></div></button></div>` : '';
+      return row + cands;
+    }).join('');
+  }
+  draw();
+}
+
 async function moveQueue(i, to){
   if (!(await requirePin(to === -1 ? 'remove songs' : 'reorder the queue'))) return;
   const item = S.queue[i]; if (!item) return;
@@ -1142,6 +1412,7 @@ document.addEventListener('click', async ev => {
         } else { startNext(); }
       }
       break;
+    case 'import': if (await requirePin('import songs')) openImport(); break;
     case 'q-top': moveQueue(i, 0); break;
     case 'q-up': moveQueue(i, i - 1); break;
     case 'q-down': moveQueue(i, i + 1); break;
