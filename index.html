@@ -527,7 +527,7 @@ let advancing = false, endTimer = null, repeatOffFor = null;
 async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
   if (!S.device) { openDevicePicker('Pick the speaker first, then try again.'); throw new Error('no device'); }
   try{
-    await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(S.device.id), { uris: [entry.uri], position_ms: Math.max(0, positionMs|0) });
+    await sendPlay(entry, positionMs, false);
   }catch(e){
     if (e.status === 404) { toast(`Can’t reach "${S.device.name}". Open Spotify on it and pick it again.`, 'err'); openDevicePicker(); }
     else if (e.status === 403 && /scope/i.test(e.message)) toast('Spotify permissions are missing — open ⚙︎ Settings → Log out, then Connect Spotify again.', 'err');
@@ -544,15 +544,40 @@ async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
   }
   S.running = true;
   S.playIssuedAt = Date.now();
-  S.seen = { playId: S.now.playId, progress: positionMs, at: Date.now(), playing: true };
-  S.player = { uri: entry.uri, name: entry.name, duration: entry.duration, progress: positionMs, isPlaying: true, at: Date.now() };
-  S.foreign = null; S.dismissedForeign = null;
+  // not "confirmed" until a poll actually shows Spotify playing this song
+  S.seen = { playId: S.now.playId, progress: positionMs, at: Date.now(), playing: false, confirmed: false, retries: 0, startPos: positionMs };
+  S.foreign = null; S.dismissedForeign = null; S.stuck = false;
   save(); renderAll(); keepAwake();
   if (repeatOffFor !== S.device.id) {   // make sure Spotify doesn't loop the song forever
     repeatOffFor = S.device.id;
     api('PUT', '/me/player/repeat?state=off&device_id=' + encodeURIComponent(S.device.id)).catch(() => { repeatOffFor = null; });
   }
-  schedulePoll(2000);
+  schedulePoll(1500);
+}
+
+// Wake the chosen device (phones especially go to sleep as Spotify Connect targets),
+// then start the song on it.
+async function sendPlay(entry, positionMs, forceTransfer){
+  const devId = S.device.id;
+  const active = S.player && S.player.deviceId === devId;
+  if (forceTransfer || !active) {
+    try {
+      await api('PUT', '/me/player', { device_ids: [devId], play: false });
+      await sleep(1500);
+    } catch(e){ if (e.status === 404) throw e; /* otherwise try playing anyway */ }
+  }
+  await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(devId), { uris: [entry.uri], position_ms: Math.max(0, positionMs|0) });
+}
+
+let retrying = false;
+async function retryStart(){
+  const e = S.now; if (!e || !S.seen || retrying) return;
+  retrying = true;
+  S.seen.retries = (S.seen.retries || 0) + 1;
+  try { await sendPlay(e, S.seen.startPos || 0, true); } catch(err){}
+  finally { retrying = false; }
+  S.playIssuedAt = Date.now();
+  schedulePoll(1500);
 }
 
 async function startNext(){
@@ -616,16 +641,17 @@ async function poll(){
   const item = st && st.item;
   S.player = item
     ? { uri: item.uri, name: item.name, artists: (item.artists||[]).map(a => a.name).join(', '), progress: st.progress_ms || 0,
-        duration: item.duration_ms || 0, isPlaying: !!st.is_playing, at: Date.now(), deviceName: st.device && st.device.name }
-    : { uri: null, isPlaying: false, progress: 0, duration: 0, at: Date.now() };
+        duration: item.duration_ms || 0, isPlaying: !!st.is_playing, at: Date.now(), deviceName: st.device && st.device.name, deviceId: st.device && st.device.id }
+    : { uri: null, isPlaying: false, progress: 0, duration: 0, at: Date.now(), deviceId: st && st.device && st.device.id };
   evaluate();
   renderNow(); renderForeign();
-  schedulePoll(S.now ? 3000 : 10000);
+  const waiting = S.now && S.seen && !S.seen.confirmed && !S.stuck;
+  schedulePoll(waiting ? 1500 : S.now ? 3000 : 10000);
 }
 
 function ourSongEnded(e){
   const sn = S.seen;
-  if (!sn || sn.playId !== e.playId) return false;
+  if (!sn || sn.playId !== e.playId || !sn.confirmed) return false;
   const est = sn.progress + (sn.playing ? Date.now() - sn.at : 0);
   return est >= e.duration - 4000 || sn.progress >= e.duration - 12000;
 }
@@ -633,16 +659,29 @@ function ourSongEnded(e){
 function evaluate(){
   const e = S.now, p = S.player;
   clearTimeout(endTimer);
-  if (!e) { S.foreign = null; return; }
-  const grace = Date.now() - S.playIssuedAt < 8000;
+  if (!e) { S.foreign = null; S.stuck = false; return; }
+  const sinceCmd = Date.now() - S.playIssuedAt;
+  const grace = sinceCmd < 8000;
+  const sn = S.seen && S.seen.playId === e.playId ? S.seen : null;
+
+  // ---- Waiting for the song to actually start on the speaker ----
+  if (sn && !sn.confirmed) {
+    if (sameTrack(p, e) && p.isPlaying) {
+      sn.confirmed = true; S.stuck = false;           // it started — fall through to normal handling
+    } else {
+      if (sinceCmd > 5000 && (sn.retries || 0) < 2) { retryStart(); }
+      else if (sinceCmd > 6000 && (sn.retries || 0) >= 2) { S.stuck = true; }
+      return;
+    }
+  }
 
   if (sameTrack(p, e)) {
     // Spotify finished the track and stopped on it (progress reset to 0)
-    if (!p.isPlaying && !grace && p.progress < 3000 && S.seen && S.seen.playId === e.playId && S.seen.progress > e.duration - 12000) {
+    if (!p.isPlaying && !grace && p.progress < 3000 && sn && sn.confirmed && sn.progress > e.duration - 12000) {
       if (S.running) startNext(); return;
     }
-    S.foreign = null;
-    S.seen = { playId: e.playId, progress: p.progress, at: p.at, playing: p.isPlaying };
+    S.foreign = null; S.stuck = false;
+    S.seen = { playId: e.playId, progress: p.progress, at: p.at, playing: p.isPlaying, confirmed: true, retries: 0, startPos: 0 };
     LS.set('seen', S.seen);
     if (p.isPlaying && S.running) {
       const remaining = e.duration - p.progress;
@@ -731,7 +770,7 @@ function renderNow(){
     <div class="now-row">
       ${e.art ? `<img class="now-art" src="${esc(e.art)}" alt="">` : `<div class="now-art ph">🎤</div>`}
       <div class="now-main">
-        <div class="now-kicker">${playing ? 'Now singing' : ours ? 'Paused' : 'On stage'}</div>
+        <div class="now-kicker">${S.seen && S.seen.playId === e.playId && !S.seen.confirmed ? (S.stuck ? 'Speaker not responding' : 'Starting on ' + esc(S.device ? S.device.name : 'speaker') + '…') : playing ? 'Now singing' : ours ? 'Paused' : 'On stage'}</div>
         <div class="now-label">${esc(e.label || e.name)}</div>
         <div class="now-song">${e.label ? esc(e.name) + ' · ' : ''}${esc(e.artists)}</div>
       </div>
@@ -828,6 +867,14 @@ function renderResults(){
 function renderForeign(){
   const el = $('#foreign'); if (!el) return;
   const f = S.foreign;
+  if (S.now && S.stuck) {
+    el.classList.remove('hidden');
+    el.innerHTML = `
+      <div class="msg">⚠️ <b>${esc(S.device ? S.device.name : 'The speaker')} isn’t starting the song.</b> Open the Spotify app on it and leave it on screen, then tap Try again.${S.device && /phone|tablet/i.test(S.device.type) ? ' (iPhones put Spotify to sleep in the background.)' : ''}</div>
+      <button class="btn btn-cyan" data-act="f-retry">↻ Try again</button>
+      <button class="btn btn-ghost" data-act="device">🔈 Change speaker</button>`;
+    return;
+  }
   if (!f || !S.now) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   el.innerHTML = `
@@ -989,7 +1036,7 @@ async function openSettings(){
       <div class="divider"></div>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
-      <div class="info-line">Karaoke Queue v1.1</div>
+      <div class="info-line">Karaoke Queue v1.2</div>
     </div>`, {
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
@@ -1114,6 +1161,9 @@ document.addEventListener('click', async ev => {
       }
       break;
     case 'f-next': if (await requirePin('take Spotify back')) startNext(); break;
+    case 'f-retry':
+      if (S.now && S.seen) { S.stuck = false; S.seen.retries = 1; renderForeign(); renderNow(); retryStart(); }
+      break;
     case 'f-dismiss': S.dismissedForeign = (S.foreign && S.foreign.uri) || 'nothing'; S.foreign = null; renderForeign(); break;
   }
 });
