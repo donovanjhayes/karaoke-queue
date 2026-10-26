@@ -530,7 +530,8 @@ async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
     await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(S.device.id), { uris: [entry.uri], position_ms: Math.max(0, positionMs|0) });
   }catch(e){
     if (e.status === 404) { toast(`Can’t reach "${S.device.name}". Open Spotify on it and pick it again.`, 'err'); openDevicePicker(); }
-    else if (e.status === 403) toast('Spotify refused playback (Premium required, or the device doesn’t allow remote control).', 'err');
+    else if (e.status === 403 && /scope/i.test(e.message)) toast('Spotify permissions are missing — open ⚙︎ Settings → Log out, then Connect Spotify again.', 'err');
+    else if (e.status === 403) toast('Spotify refused playback: ' + e.message, 'err');
     else if (e.message !== 'no device') toast('Couldn’t start the song: ' + e.message, 'err');
     throw e;
   }
@@ -610,7 +611,7 @@ function sameTrack(p, e){ return !!(p && e && p.uri && (p.uri === e.uri || (p.na
 async function poll(){
   if (!S.tokens) return;
   let st;
-  try { st = await api('GET', '/me/player?market=from_token'); }
+  try { st = await api('GET', '/me/player'); }
   catch(e){ schedulePoll(e.status === 429 ? 15000 : 8000); return; }
   const item = st && st.item;
   S.player = item
@@ -870,7 +871,7 @@ async function doSearch(more){
   const offset = more ? S.search.items.length : 0;
   S.search.loading = true; S.search.error = ''; if (!more) S.search.items = S.search.items; renderResults();
   try{
-    const j = await api('GET', '/search?' + new URLSearchParams({ q, type: 'track', limit: '10', offset: String(offset), market: 'from_token' }));
+    const j = await api('GET', '/search?' + new URLSearchParams({ q, type: 'track', limit: '10', offset: String(offset) }));
     if (seq !== searchSeq) return;
     const items = ((j.tracks && j.tracks.items) || []).filter(Boolean).map(mapTrack);
     S.search.items = more ? S.search.items.concat(items) : items;
@@ -988,6 +989,7 @@ async function openSettings(){
       <div class="divider"></div>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
+      <div class="info-line">Karaoke Queue v1.1</div>
     </div>`, {
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
