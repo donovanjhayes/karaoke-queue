@@ -404,24 +404,45 @@ function refreshToken(){
   return refreshing;
 }
 
+const apiLog = [], quotaUntil = {};   // recent calls, shown in Settings → Diagnostics
+function logCall(method, path, status, note){
+  apiLog.push({ at: Date.now(), method, path: path.split('?')[0] + (path.includes('device_id') ? ' [device]' : ''), status, note: note || '' });
+  if (apiLog.length > 60) apiLog.shift();
+}
 async function api(method, path, body, retry = true){
   if (!S.tokens) throw new Error('Not logged in to Spotify');
+  const qkey = method + ' ' + path.split('?')[0];   // Spotify limits per group of endpoints, so pause only this one
+  if (quotaUntil[qkey] && Date.now() < quotaUntil[qkey]) {
+    const e = new Error('Spotify’s usage limit for this app was reached. It resets on its own — try again in a few minutes.'); e.status = 429; e.quota = true;
+    logCall(method, path, 'skipped', 'quota pause'); throw e;
+  }
   if (Date.now() > S.tokens.expiresAt) await refreshToken();
   const opts = { method, headers: { Authorization: 'Bearer ' + S.tokens.access } };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-  const r = await fetch(API + path, opts);
-  if (r.status === 401 && retry) { await refreshToken(); return api(method, path, body, false); }
+  let r;
+  try { r = await fetch(API + path, opts); }
+  catch(err){ logCall(method, path, 'network', err.message); throw new Error('Network problem reaching Spotify'); }
+  if (r.status === 401 && retry) { logCall(method, path, 401, 'refreshing token'); await refreshToken(); return api(method, path, body, false); }
   if (r.status === 429) {
+    const j429 = await r.json().catch(() => null);
+    const reason = j429 && (j429.reason || (j429.error && j429.error.reason));
+    logCall(method, path, 429, reason || 'rate limit');
+    if (reason === 'QUOTA_EXCEEDED') {
+      quotaUntil[qkey] = Date.now() + 5 * 60 * 1000;
+      const e = new Error('Spotify’s usage limit for this app was reached. It resets on its own — try again in a few minutes.'); e.status = 429; e.quota = true; throw e;
+    }
     const ra = Math.min(+r.headers.get('Retry-After') || 5, 15);
     if (retry) { await sleep(ra * 1000); return api(method, path, body, false); }
     const e = new Error('Spotify asked us to slow down — try again in a few seconds.'); e.status = 429; throw e;
   }
-  if (r.status === 204 || r.status === 202) return null;
+  if (r.status === 204 || r.status === 202) { logCall(method, path, r.status); return null; }
   const text = await r.text(); let j = null; try { j = text ? JSON.parse(text) : null; } catch(e){}
   if (!r.ok) {
     const msg = (j && j.error && (j.error.message || j.error)) || ('Spotify error ' + r.status);
+    logCall(method, path, r.status, typeof msg === 'string' ? msg : '');
     const e = new Error(typeof msg === 'string' ? msg : 'Spotify error ' + r.status); e.status = r.status; e.reason = j && j.error && j.error.reason; throw e;
   }
+  logCall(method, path, r.status);
   return j;
 }
 
@@ -677,8 +698,11 @@ function sameTrack(p, e){ return !!(p && e && p.uri && (p.uri === e.uri || (p.na
 async function poll(){
   if (!S.tokens) return;
   let st;
-  try { st = await api('GET', '/me/player'); }
-  catch(e){ schedulePoll(e.status === 429 ? 15000 : 8000); return; }
+  try { st = await api('GET', '/me/player'); S.pollError = ''; }
+  catch(e){
+    S.pollError = e.message; renderForeign();
+    schedulePoll(e.quota ? 60000 : e.status === 429 ? 15000 : 8000); return;
+  }
   const item = st && st.item;
   S.player = item
     ? { uri: item.uri, name: item.name, artists: (item.artists||[]).map(a => a.name).join(', '), progress: st.progress_ms || 0,
@@ -686,8 +710,24 @@ async function poll(){
     : { uri: null, isPlaying: false, progress: 0, duration: 0, at: Date.now(), deviceId: st && st.device && st.device.id };
   evaluate();
   renderNow(); renderForeign();
-  const waiting = S.now && S.seen && !S.seen.confirmed && !S.stuck;
-  schedulePoll(waiting ? 1500 : S.now ? 3000 : 10000);
+  schedulePoll(nextPollDelay());
+}
+
+// Poll only as often as needed — Spotify limits how many calls an app can make.
+function nextPollDelay(){
+  const d = basePollDelay();
+  const playingOurs = S.now && S.player && sameTrack(S.player, S.now) && S.player.isPlaying;
+  return document.visibilityState === 'hidden' && !playingOurs ? Math.max(d, 60000) : d;
+}
+function basePollDelay(){
+  const e = S.now, p = S.player;
+  if (!e) return S.running ? 20000 : 60000;
+  if (S.seen && S.seen.playId === e.playId && !S.seen.confirmed) return S.stuck ? 15000 : 2000;
+  if (p && sameTrack(p, e) && p.isPlaying) {
+    const remaining = e.duration - p.progress;
+    return Math.max(1500, Math.min(15000, remaining - 5000));   // check in again ~5s before the end
+  }
+  return 8000;
 }
 
 function ourSongEnded(e){
@@ -914,6 +954,7 @@ function renderResults(){
 function stuckDiag(){
   if (S.stuckReason === 'missing') return `Spotify doesn’t list "${esc(S.device.name)}" as a device right now. Open Spotify on it, play anything for a second, then tap Change speaker.`;
   const p = S.player;
+  if (S.pollError) return 'Couldn’t check playback: ' + esc(S.pollError) + (S.stuckReason ? ' Last error: ' + esc(S.stuckReason) : '');
   let d = p && p.deviceName
     ? `Spotify says: ${p.uri ? (p.isPlaying ? 'playing' : 'paused on') + ' “' + esc(p.name) + '”' : 'nothing loaded'} on ${esc(p.deviceName)}.`
     : 'Spotify says: no device is active right now.';
@@ -930,6 +971,12 @@ function renderForeign(){
         <div class="t2" style="white-space:normal;margin-top:4px">${stuckDiag()}</div></div>
       <button class="btn btn-cyan" data-act="f-retry">↻ Try again</button>
       <button class="btn btn-ghost" data-act="device">🔈 Change speaker</button>`;
+    return;
+  }
+  if (S.now && S.pollError) {
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="msg">⚠️ <b>Can’t check what Spotify is playing.</b> ${esc(S.pollError)} Songs may not move to the next one automatically until this clears.</div>
+      <button class="btn btn-ghost" data-act="settings">🩺 Settings → Diagnostics</button>`;
     return;
   }
   if (!f || !S.now) { el.classList.add('hidden'); return; }
@@ -1092,9 +1139,10 @@ async function openSettings(){
       <button class="btn btn-danger" data-act="clear-queue" ${S.queue.length ? '' : 'disabled'}>🗑 Clear the queue (${S.queue.length})</button>
       <button class="btn btn-danger" data-act="new-party">🎉 New party (clear queue + tonight's list)</button>
       <div class="divider"></div>
+      <button class="btn btn-ghost" data-act="diag">🩺 Diagnostics</button>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
-      <div class="info-line">Karaoke Queue v1.4</div>
+      <div class="info-line">Karaoke Queue v1.5</div>
     </div>`, {
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
@@ -1115,6 +1163,7 @@ async function openSettings(){
           S.queue = []; S.history = []; S.now = null; S.seen = null; S.running = false; S.foreign = null; save(); renderAll(); toast('Fresh start 🎉');
         }
       }
+      if (act === 'diag') { mm.close(); openDiagnostics(); }
       if (act === 'logout') {
         mm.close();
         if (await confirmDialog({ title: 'Log out of Spotify?', body: 'The queue is kept on this iPad.', buttons: [{label:'Log out', value:true, cls:'btn-danger-solid'},{label:'Cancel', value:null}] })) {
@@ -1123,6 +1172,44 @@ async function openSettings(){
       }
     }
   });
+}
+
+async function openDiagnostics(){
+  const m = openModal(`<h2>🩺 Diagnostics</h2><p>Take a screenshot of this if something isn’t working.</p>
+    <div id="diagBody" style="font:13px/1.5 ui-monospace,Menlo,monospace;color:var(--text);-webkit-user-select:text;user-select:text;word-break:break-word"></div>
+    <div class="stack"><button class="btn btn-ghost" data-act="test">▶ Test: list devices + playback state</button><button class="btn btn-ghost" data-act="close">Close</button></div>`, {
+    wide: true,
+    async onClick(act, el, mm){
+      if (act === 'close') mm.close();
+      if (act === 'test') {
+        for (const k in quotaUntil) delete quotaUntil[k];
+        try { const d = await api('GET', '/me/player/devices'); extra = 'Devices: ' + (((d && d.devices) || []).map(x => `${x.name} [${x.type}${x.is_active ? ', active' : ''}${x.is_restricted ? ', RESTRICTED' : ''}] id=${x.id.slice(0, 8)}…`).join(' | ') || 'none'); }
+        catch(e){ extra = 'Devices error: ' + e.message; }
+        try { const st = await api('GET', '/me/player'); extra += '\nPlayer: ' + (st ? `${st.is_playing ? 'playing' : 'paused'} "${st.item ? st.item.name : '-'}" on ${st.device ? st.device.name : '?'}` : '204 — no active device'); }
+        catch(e){ extra += '\nPlayer error: ' + e.message; }
+        draw();
+      }
+    }
+  });
+  let extra = '', who = '…';
+  function draw(){
+    const p = S.player, sn = S.seen;
+    m.el.querySelector('#diagBody').innerHTML = esc([
+      'Version: v1.5',
+      'Account: ' + who,
+      'Scopes: ' + (S.tokens && S.tokens.scope != null ? S.tokens.scope : 'unknown (logged in before v1.3)'),
+      'Speaker: ' + (S.device ? `${S.device.name} [${S.device.type}] id=${S.device.id.slice(0, 8)}…` : 'none'),
+      'Last poll: ' + (S.pollError ? 'ERROR ' + S.pollError : p ? `${p.uri ? (p.isPlaying ? 'playing' : 'paused') + ' "' + p.name + '"' : 'nothing'} on ${p.deviceName || '(no active device)'} — ${Math.round((Date.now() - p.at) / 1000)}s ago` : 'none yet'),
+      'Now: ' + (S.now ? `${S.now.name} confirmed=${!!(sn && sn.confirmed)} retries=${sn ? sn.retries || 0 : '-'} stuck=${!!S.stuck}` : 'nothing'),
+      'Queue: ' + S.queue.length + ' · running=' + S.running,
+      extra,
+      '— Recent Spotify calls (newest first) —',
+      ...apiLog.slice().reverse().slice(0, 30).map(c => `${fmtClock(c.at)} ${c.method} ${c.path} → ${c.status}${c.note ? ' (' + c.note + ')' : ''}`)
+    ].filter(Boolean).join('\n')).replace(/\n/g, '<br>');
+  }
+  draw();
+  try { const me = await api('GET', '/me'); who = `${me.display_name || ''} (${me.id})`; } catch(e){ who = 'error: ' + e.message; }
+  draw();
 }
 
 async function saveHistoryPlaylist(){
