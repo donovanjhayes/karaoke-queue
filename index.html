@@ -3,67 +3,77 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0816">
+<meta name="theme-color" content="#0f0d0b">
 <title>Karaoke Queue</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎤</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230f0d0b'/><text x='50' y='70' font-family='Didot,Georgia,serif' font-size='62' text-anchor='middle' fill='%23c8a35a'>K</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,600;1,6..96,500&display=swap" rel="stylesheet">
 <style>
+  /* ---------- Classic Hollywood: warm black, ivory, Oscar gold, velvet red ---------- */
   :root{
-    --bg:#0b0816; --panel:#161127; --panel2:#201838; --line:#2f2550;
-    --text:#f4f0fd; --muted:#a79fc6; --pink:#ff3d9a; --cyan:#2de2e6;
-    --purple:#9b5cff; --green:#3dffa2; --red:#ff4d5e; --yellow:#ffd23f;
-    --radius:16px;
+    --bg:#0f0d0b; --panel:#171512; --panel2:#1f1c18; --line:#2d2924; --line2:#3a342d;
+    --text:#f1ebdf; --muted:#9a9083; --dim:#6f665b;
+    --gold:#c8a35a; --gold-hi:#e0c283; --gold-ink:#1a1408;
+    --red:#b03a33; --red-text:#d9645c; --green:#8fb08a;
+    --radius:10px;
+    --serif:"Bodoni Moda", Didot, "Bodoni 72", "Libre Bodoni", Georgia, serif;
+    --sans:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%}
   body{
-    background:radial-gradient(1200px 600px at 10% -10%, #2a0f45 0%, transparent 60%),
-               radial-gradient(900px 500px at 110% 10%, #0f2f45 0%, transparent 60%), var(--bg);
+    background:radial-gradient(1100px 520px at 50% -180px, #2a2219 0%, transparent 70%), var(--bg);
     background-attachment:fixed;
     color:var(--text);
-    font:16px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    font:16px/1.4 var(--sans);
     -webkit-user-select:none;user-select:none;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
-  input{-webkit-user-select:text;user-select:text}
+  input,textarea{-webkit-user-select:text;user-select:text}
   button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
   .hidden{display:none!important}
   img{display:block}
+  .lk{display:inline-block;width:11px;height:13px;vertical-align:-1px;margin-left:6px;opacity:.75}
+  .lk svg{display:block;width:100%;height:100%}
 
   /* ---------- buttons ---------- */
-  .btn{min-height:52px;padding:0 20px;border-radius:14px;font-weight:700;font-size:17px;
-       display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform .08s, filter .15s}
-  .btn:active{transform:scale(.97)}
-  .btn-primary{background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;box-shadow:0 0 24px #ff3d9a55}
-  .btn-cyan{background:#2de2e61f;color:var(--cyan);border:1.5px solid #2de2e677}
+  .btn{min-height:50px;padding:0 20px;border-radius:8px;font-weight:600;font-size:16px;letter-spacing:.2px;
+       display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background .15s, border-color .15s, transform .08s}
+  .btn:active{transform:scale(.98)}
+  .btn-primary{background:var(--gold);color:var(--gold-ink)}
+  .btn-primary:active{background:var(--gold-hi)}
+  .btn-cyan{background:transparent;color:var(--gold-hi);border:1px solid #c8a35a88}
   .btn-ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
-  .btn-danger{background:#ff4d5e1a;color:var(--red);border:1.5px solid #ff4d5e66}
+  .btn-danger{background:transparent;color:var(--red-text);border:1px solid #b03a3399}
   .btn-danger-solid{background:var(--red);color:#fff}
   .btn-block{width:100%}
-  .btn[disabled]{opacity:.45;pointer-events:none}
-  .icon-btn{width:48px;height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:22px;background:var(--panel2);border:1px solid var(--line)}
-  .chip{height:44px;padding:0 14px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);
-        display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}
-  .chip.unlocked{border-color:var(--green);color:var(--green);box-shadow:0 0 14px #3dffa233}
+  .btn[disabled]{opacity:.4;pointer-events:none}
+  .icon-btn{width:46px;height:46px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;background:transparent;border:1px solid var(--line2);color:var(--muted)}
+  .chip{height:42px;padding:0 14px;border-radius:999px;background:transparent;border:1px solid var(--line2);color:var(--muted);
+        display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:500;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+  .chip.unlocked{border-color:var(--gold);color:var(--gold-hi)}
 
   /* ---------- top bar ---------- */
-  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px}
-  .brand{font-size:22px;font-weight:800;letter-spacing:.3px;display:flex;align-items:center;gap:10px}
-  .brand span{background:linear-gradient(90deg,var(--pink),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px}
+  .brand{display:flex;align-items:baseline;gap:12px}
+  .brand span{font-family:var(--serif);font-size:28px;font-weight:600;letter-spacing:.5px;color:var(--text)}
+  .brand small{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);font-weight:600}
   .top-right{display:flex;gap:8px;align-items:center;min-width:0}
 
   /* ---------- layout ---------- */
-  .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:0 18px 18px;height:calc(100vh - 76px);height:calc(100dvh - 76px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:0 20px 20px;height:calc(100vh - 78px);height:calc(100dvh - 78px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;min-height:0;overflow:hidden}
   .side{display:flex;flex-direction:column;gap:12px;min-height:0}
   .tab-body{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .tabs{display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:5px}
-  .tab{flex:1;height:44px;border-radius:10px;font-weight:700;color:var(--muted)}
-  .tab.active{background:var(--panel2);color:var(--text);box-shadow:inset 0 -2px 0 var(--pink)}
-  .tab .count{display:inline-block;min-width:22px;padding:0 6px;margin-left:6px;border-radius:999px;background:#ffffff14;font-size:13px}
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--line)}
+  .tab{flex:1;height:44px;font-weight:600;font-size:13px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:var(--text);border-bottom-color:var(--gold)}
+  .tab .count{display:inline-block;margin-left:8px;color:var(--gold);letter-spacing:0;font-variant-numeric:tabular-nums}
   .tab-search{display:none}
 
   @media (max-width: 899px){
-    .layout{display:flex;flex-direction:column;height:auto;min-height:calc(100dvh - 76px)}
+    .layout{display:flex;flex-direction:column;height:auto;min-height:calc(100dvh - 78px)}
     .side{display:contents}
     #now{order:1}
     #tabs{order:2}
@@ -80,154 +90,160 @@
 
   /* ---------- search ---------- */
   .search-box{position:relative;padding:14px;border-bottom:1px solid var(--line)}
-  .search-box input{width:100%;height:58px;border-radius:14px;border:1.5px solid var(--line);background:#0e0a1c;color:var(--text);
-                    font-size:19px;padding:0 52px 0 50px;outline:none;-webkit-appearance:none;appearance:none}
-  .search-box input:focus{border-color:var(--pink);box-shadow:0 0 0 4px #ff3d9a22}
-  .search-box .mag{position:absolute;left:30px;top:50%;transform:translateY(-50%);font-size:20px;opacity:.7;pointer-events:none}
-  .search-box .clear{position:absolute;right:24px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;background:#ffffff14;color:var(--muted);font-size:16px}
+  .search-box input{width:100%;height:54px;border-radius:8px;border:1px solid var(--line2);background:#0c0b09;color:var(--text);
+                    font-size:18px;padding:0 50px 0 46px;outline:none;-webkit-appearance:none;appearance:none}
+  .search-box input::placeholder{color:var(--dim)}
+  .search-box input:focus{border-color:var(--gold)}
+  .search-box .mag{position:absolute;left:30px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--dim);pointer-events:none}
+  .search-box .mag svg{display:block;width:18px;height:18px}
+  .search-box .clear{position:absolute;right:24px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;color:var(--muted);font-size:15px}
   input[type=search]::-webkit-search-cancel-button{display:none}
   #results{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 8px 14px}
-  .empty{padding:36px 20px;text-align:center;color:var(--muted)}
-  .empty .big{font-size:44px;margin-bottom:8px}
-  .r-item{width:100%;display:flex;align-items:center;gap:12px;padding:8px;border-radius:12px;text-align:left}
+  .empty{padding:40px 24px;text-align:center;color:var(--muted);line-height:1.6}
+  .empty .big{font-family:var(--serif);font-size:24px;color:var(--text);margin-bottom:6px;font-style:italic}
+  .r-item{width:100%;display:flex;align-items:center;gap:12px;padding:8px;border-radius:8px;text-align:left}
   .r-item:active{background:var(--panel2)}
-  .art{width:56px;height:56px;border-radius:8px;object-fit:cover;background:var(--panel2);flex:none}
-  .art-ph{width:56px;height:56px;border-radius:8px;background:linear-gradient(135deg,#3a1d6e,#16324a);display:flex;align-items:center;justify-content:center;font-size:24px;flex:none}
+  .art{width:52px;height:52px;border-radius:4px;object-fit:cover;background:var(--panel2);flex:none}
+  .art-ph{width:52px;height:52px;border-radius:4px;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+          font-family:var(--serif);font-size:22px;color:var(--gold);flex:none}
   .r-main{flex:1;min-width:0}
-  .t1{font-weight:700;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .t1{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .t2{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-  .r-dur{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
-  .r-add{width:44px;height:44px;border-radius:50%;background:#ff3d9a22;color:var(--pink);font-size:26px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none}
-  .badge{display:inline-block;font-size:11px;font-weight:800;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle}
-  .badge-q{background:#2de2e622;color:var(--cyan)}
-  .badge-h{background:#ffd23f22;color:var(--yellow)}
-  .badge-e{background:#ffffff1c;color:var(--muted)}
-  .more{display:block;margin:10px auto 0}
+  .r-dur{color:var(--dim);font-size:14px;font-variant-numeric:tabular-nums}
+  .r-add{width:40px;height:40px;border-radius:50%;border:1px solid var(--line2);color:var(--gold);font-size:22px;font-weight:300;display:flex;align-items:center;justify-content:center;flex:none}
+  .badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:1px;padding:2px 6px;border-radius:3px;margin-left:8px;vertical-align:2px}
+  .badge-q{color:var(--gold);border:1px solid #c8a35a66}
+  .badge-h{color:var(--muted);border:1px solid var(--line2)}
+  .badge-e{color:var(--dim);border:1px solid var(--line2)}
+  .more{display:flex;margin:10px auto 0}
 
-  /* ---------- now playing ---------- */
-  .now-card{background:linear-gradient(135deg,#2a1150,#14203d);border:1px solid #4b2f86;border-radius:var(--radius);padding:16px;box-shadow:0 0 30px #9b5cff22}
-  .now-row{display:flex;gap:16px;align-items:center}
-  .now-art{width:96px;height:96px;border-radius:12px;object-fit:cover;flex:none;box-shadow:0 6px 24px #0008}
-  .now-art.ph{display:flex;align-items:center;justify-content:center;font-size:44px;background:#ffffff10}
-  .now-kicker{font-size:12px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--cyan)}
-  .now-label{font-size:26px;font-weight:800;line-height:1.15;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .now-song{font-size:16px;color:#d8d0f3;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ---------- now showing ---------- */
+  .now-card{background:var(--panel);border:1px solid var(--line);border-top:2px solid var(--gold);border-radius:var(--radius);padding:18px}
+  .now-row{display:flex;gap:18px;align-items:center}
+  .now-art{width:92px;height:92px;border-radius:4px;object-fit:cover;flex:none;box-shadow:0 8px 24px #0009}
+  .now-art.ph{display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:40px;color:var(--gold);background:var(--panel2);border:1px solid var(--line)}
+  .now-kicker{font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--gold)}
+  .now-label{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1.15;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .now-song{font-size:15px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .now-main{flex:1;min-width:0}
-  .bar{height:6px;border-radius:3px;background:#ffffff1c;margin:14px 0 6px;overflow:hidden}
-  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--pink),var(--cyan));width:0}
-  .times{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
-  .now-ctrls{display:flex;gap:10px;margin-top:12px}
-  .now-ctrls .btn{flex:1;min-height:48px;font-size:16px}
-  .now-empty{text-align:center;padding:8px 4px}
-  .now-empty .t{font-size:20px;font-weight:800;margin-bottom:4px}
-  .now-empty .s{color:var(--muted);margin-bottom:12px}
+  .bar{height:3px;border-radius:2px;background:var(--line2);margin:16px 0 6px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:var(--gold);width:0}
+  .times{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .now-ctrls{display:flex;gap:10px;margin-top:14px}
+  .now-ctrls .btn{flex:1;min-height:46px;font-size:15px}
+  .now-empty{text-align:center;padding:6px 4px}
+  .now-empty .t{font-family:var(--serif);font-size:26px;font-style:italic;margin-bottom:4px}
+  .now-empty .s{color:var(--muted);margin-bottom:14px}
 
   /* ---------- queue ---------- */
-  .q-list{list-style:none;margin:0;padding:8px}
-  .q-item{display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px}
-  .q-item+.q-item{border-top:1px solid #ffffff0c}
-  .q-item.next{background:#ff3d9a12}
-  .q-pos{width:28px;text-align:center;font-weight:800;color:var(--muted);font-size:18px;flex:none;font-variant-numeric:tabular-nums}
-  .q-item.next .q-pos{color:var(--pink)}
-  .q-wait{text-align:right;font-size:14px;font-weight:700;color:var(--cyan);flex:none;font-variant-numeric:tabular-nums}
-  .q-wait small{display:block;color:var(--muted);font-weight:500;font-size:12px}
+  .q-list{list-style:none;margin:0;padding:6px 10px}
+  .q-item{display:flex;align-items:center;gap:12px;padding:10px 4px}
+  .q-item+.q-item{border-top:1px solid var(--line)}
+  .q-pos{width:26px;text-align:center;font-family:var(--serif);color:var(--dim);font-size:20px;flex:none;font-variant-numeric:tabular-nums}
+  .q-item.next .q-pos{color:var(--gold)}
+  .q-wait{text-align:right;font-size:13px;font-weight:600;color:var(--text);flex:none;font-variant-numeric:tabular-nums}
+  .q-item.next .q-wait{color:var(--gold-hi)}
+  .q-wait small{display:block;color:var(--dim);font-weight:400;font-size:12px}
   .q-actions{display:flex;gap:4px;flex:none}
-  .q-btn{width:40px;height:40px;border-radius:10px;background:#ffffff0d;font-size:17px;display:flex;align-items:center;justify-content:center;color:#cfc6ee}
-  .q-btn.del{color:var(--red)}
+  .q-btn{width:38px;height:38px;border-radius:6px;border:1px solid var(--line);font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .q-btn.del{color:var(--red-text)}
   .q-btn[disabled]{opacity:.25;pointer-events:none}
-  .secret{color:var(--yellow)}
-  .lock-hint{font-size:12px;color:var(--muted);text-align:center;padding:4px 0 12px}
+  .secret{color:var(--gold);font-style:italic}
+  .lock-hint{font-size:12px;color:var(--dim);text-align:center;padding:6px 0 14px}
 
-  /* ---------- history ---------- */
+  /* ---------- tonight ---------- */
   .h-head{display:flex;gap:8px;padding:12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-  .h-head .btn{min-height:44px;font-size:15px}
-  .h-time{color:var(--muted);font-size:13px;width:64px;flex:none;font-variant-numeric:tabular-nums}
+  .h-head .btn{min-height:42px;font-size:14px}
+  .h-time{color:var(--dim);font-size:13px;width:62px;flex:none;font-variant-numeric:tabular-nums}
 
   /* ---------- banner ---------- */
-  .banner{margin:0 18px 12px;padding:12px 14px;border-radius:14px;background:#ffd23f17;border:1.5px solid #ffd23f88;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-  .banner .msg{flex:1;min-width:220px}
-  .banner .msg b{color:var(--yellow)}
-  .banner .btn{min-height:44px;font-size:15px}
+  .banner{margin:0 20px 14px;padding:12px 16px;border-radius:var(--radius);background:#1d1611;border:1px solid #6e5631;border-left:3px solid var(--gold);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .banner .msg{flex:1;min-width:220px;color:var(--text)}
+  .banner .msg b{color:var(--gold-hi)}
+  .banner .btn{min-height:42px;font-size:14px}
 
   /* ---------- modal ---------- */
-  .backdrop{position:fixed;inset:0;background:#05030cc4;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;animation:fade .15s}
-  .modal{width:100%;max-width:520px;max-height:92vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:0 20px 60px #000a;animation:pop .18s}
-  .modal h2{margin:0 0 6px;font-size:22px}
+  .backdrop{position:fixed;inset:0;background:#070605d9;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;animation:fade .15s}
+  .modal{width:100%;max-width:520px;max-height:92vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line2);border-top:2px solid var(--gold);border-radius:12px;padding:24px;box-shadow:0 24px 60px #000c;animation:pop .18s}
+  .modal h2{margin:0 0 6px;font-family:var(--serif);font-size:26px;font-weight:600}
   .modal.wide{max-width:760px;padding-bottom:0}
-  .imp-choice{display:flex;align-items:center;gap:14px;padding:16px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);width:100%;text-align:left}
-  .imp-choice .ico{font-size:30px}
-  .imp-list{margin:10px -6px 0;padding:0}
-  .imp-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:12px}
-  .imp-row+.imp-row{border-top:1px solid #ffffff0c}
-  .imp-row.off{opacity:.45}
-  .cb{width:30px;height:30px;border-radius:8px;border:2px solid var(--muted);flex:none;display:flex;align-items:center;justify-content:center;font-weight:900;color:#fff}
-  .cb.on{background:var(--pink);border-color:var(--pink)}
-  .imp-src{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .imp-change{height:36px;padding:0 12px;border-radius:10px;background:#ffffff10;font-size:13px;font-weight:700;flex:none}
-  .imp-cands{margin:0 0 8px 46px;display:flex;flex-direction:column;gap:6px}
-  .imp-cand{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:10px;background:#0e0a1c;border:1px solid var(--line);text-align:left;width:100%}
-  .imp-cand.sel{border-color:var(--green)}
-  .imp-cand .art,.imp-cand .art-ph{width:40px;height:40px}
-  .imp-foot{position:sticky;bottom:0;background:var(--panel);padding:12px 0 18px;margin-top:10px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
-  .imp-foot .btn{flex:1}
-  textarea.csv{width:100%;min-height:160px;border-radius:12px;border:1.5px solid var(--line);background:#0e0a1c;color:var(--text);font:15px ui-monospace,Menlo,monospace;padding:12px;outline:none;-webkit-user-select:text;user-select:text}
-  .pl-row{display:flex;align-items:center;gap:12px;padding:10px;border-radius:12px;width:100%;text-align:left}
-  .pl-row:active{background:var(--panel2)}
-  .pl-row[disabled]{opacity:.4}
   .modal p{color:var(--muted);margin:6px 0 14px}
   .modal .stack{display:flex;flex-direction:column;gap:10px;margin-top:16px}
   .modal .row2{display:flex;gap:10px}
   .modal .row2 .btn{flex:1}
   @keyframes fade{from{opacity:0}}
-  @keyframes pop{from{transform:scale(.96);opacity:0}}
+  @keyframes pop{from{transform:translateY(6px);opacity:0}}
   .song-head{display:flex;gap:14px;align-items:center;margin-bottom:14px}
-  .song-head img,.song-head .art-ph{width:80px;height:80px;border-radius:10px;object-fit:cover}
-  .field{display:block;margin:12px 0}
-  .field span{display:block;font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px}
-  .field input{width:100%;height:52px;border-radius:12px;border:1.5px solid var(--line);background:#0e0a1c;color:var(--text);font-size:18px;padding:0 14px;outline:none}
-  .field input:focus{border-color:var(--purple)}
-  .toggle{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);width:100%;text-align:left}
-  .toggle .sw{width:50px;height:30px;border-radius:15px;background:#ffffff22;position:relative;flex:none;transition:background .15s}
-  .toggle .sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s}
-  .toggle.on .sw{background:var(--yellow)}
-  .toggle.on .sw::after{left:23px}
+  .song-head img,.song-head .art-ph{width:76px;height:76px;border-radius:4px;object-fit:cover}
+  .field{display:block;margin:14px 0}
+  .field span{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:2px}
+  .field input{width:100%;height:50px;border-radius:8px;border:1px solid var(--line2);background:#0c0b09;color:var(--text);font-size:17px;padding:0 14px;outline:none}
+  .field input:focus{border-color:var(--gold)}
+  .toggle{display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);width:100%;text-align:left}
+  .toggle .sw{width:46px;height:28px;border-radius:14px;background:var(--line2);position:relative;flex:none;transition:background .15s}
+  .toggle .sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--text);transition:left .15s}
+  .toggle.on .sw{background:var(--gold)}
+  .toggle.on .sw::after{left:21px;background:var(--gold-ink)}
   .toggle small{display:block;color:var(--muted);font-size:13px}
-  .warn{background:#ffd23f14;border:1px solid #ffd23f66;color:#ffe48a;border-radius:12px;padding:10px 12px;font-size:15px;margin:10px 0}
-  .info-line{font-size:14px;color:var(--muted);text-align:center;margin-top:-2px}
+  .warn{background:#1d1611;border:1px solid #6e5631;color:var(--gold-hi);border-radius:8px;padding:10px 12px;font-size:15px;margin:10px 0}
+  .info-line{font-size:13px;color:var(--dim);text-align:center}
   .divider{height:1px;background:var(--line);margin:8px 0}
 
   /* pin pad */
   .pin-dots{display:flex;justify-content:center;gap:14px;margin:18px 0}
-  .pin-dots i{width:16px;height:16px;border-radius:50%;border:2px solid var(--muted)}
-  .pin-dots i.f{background:var(--pink);border-color:var(--pink)}
-  .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:320px;margin:0 auto}
-  .pin-pad button{height:64px;border-radius:16px;background:var(--panel2);border:1px solid var(--line);font-size:26px;font-weight:600}
-  .pin-pad button:active{background:#33285a}
-  .pin-err{color:var(--red);text-align:center;min-height:22px;font-weight:600}
+  .pin-dots i{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--muted)}
+  .pin-dots i.f{background:var(--gold);border-color:var(--gold)}
+  .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:300px;margin:0 auto}
+  .pin-pad button{height:62px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);font-size:24px;font-weight:400}
+  .pin-pad button:active{background:var(--line2)}
+  .pin-err{color:var(--red-text);text-align:center;min-height:22px;font-weight:600}
   .shake{animation:shake .3s}
   @keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 
   /* device list */
-  .dev{display:flex;align-items:center;gap:12px;padding:14px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);width:100%;text-align:left}
-  .dev.sel{border-color:var(--green);box-shadow:0 0 14px #3dffa233}
-  .dev .ico{font-size:24px}
+  .dev{display:flex;align-items:center;gap:12px;padding:14px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);width:100%;text-align:left}
+  .dev.sel{border-color:var(--gold)}
+  .dev .ico{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);width:72px}
 
   /* setup screens */
   .screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-  .card{width:100%;max-width:560px;background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:28px}
-  .card h1{margin:0 0 8px;font-size:30px}
+  .card{width:100%;max-width:560px;background:var(--panel);border:1px solid var(--line);border-top:2px solid var(--gold);border-radius:12px;padding:30px}
+  .card h1{margin:0 0 8px;font-family:var(--serif);font-size:34px;font-weight:600}
   .card p,.card li{color:var(--muted)}
   .card ol{padding-left:20px}
   .card li{margin:6px 0}
-  .code{display:flex;gap:8px;align-items:center;background:#0e0a1c;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:14px ui-monospace,Menlo,monospace;word-break:break-all;color:var(--cyan);-webkit-user-select:all;user-select:all}
+  .card .kicker{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);font-weight:700}
+  .code{display:flex;gap:8px;align-items:center;background:#0c0b09;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:14px ui-monospace,Menlo,monospace;word-break:break-all;color:var(--gold-hi);-webkit-user-select:all;user-select:all}
   .code span{flex:1}
 
+  /* import */
+  .imp-choice{display:flex;align-items:center;gap:14px;padding:16px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);width:100%;text-align:left}
+  .imp-choice .ico{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);width:64px;font-weight:700}
+  .imp-list{margin:10px -6px 0;padding:0}
+  .imp-row{display:flex;align-items:center;gap:10px;padding:8px 6px}
+  .imp-row+.imp-row{border-top:1px solid var(--line)}
+  .imp-row.off{opacity:.45}
+  .cb{width:26px;height:26px;border-radius:5px;border:1.5px solid var(--muted);flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:var(--gold-ink)}
+  .cb.on{background:var(--gold);border-color:var(--gold)}
+  .imp-src{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .imp-change{height:34px;padding:0 12px;border-radius:6px;border:1px solid var(--line2);font-size:13px;font-weight:600;flex:none;color:var(--muted)}
+  .imp-cands{margin:0 0 8px 42px;display:flex;flex-direction:column;gap:6px}
+  .imp-cand{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:6px;background:#0c0b09;border:1px solid var(--line);text-align:left;width:100%}
+  .imp-cand.sel{border-color:var(--gold)}
+  .imp-cand .art,.imp-cand .art-ph{width:38px;height:38px;font-size:16px}
+  .imp-foot{position:sticky;bottom:0;background:var(--panel);padding:12px 0 18px;margin-top:10px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
+  .imp-foot .btn{flex:1}
+  textarea.csv{width:100%;min-height:160px;border-radius:8px;border:1px solid var(--line2);background:#0c0b09;color:var(--text);font:15px ui-monospace,Menlo,monospace;padding:12px;outline:none}
+  .pl-row{display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;width:100%;text-align:left}
+  .pl-row:active{background:var(--panel2)}
+  .pl-row[disabled]{opacity:.4}
+
   /* toast */
-  #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);background:#241b40;border:1px solid var(--line);color:var(--text);
-         padding:14px 20px;border-radius:14px;font-weight:600;box-shadow:0 10px 40px #000a;opacity:0;pointer-events:none;transition:all .2s;z-index:80;max-width:min(92vw,560px);text-align:center}
+  #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(16px);background:var(--panel2);border:1px solid var(--line2);color:var(--text);
+         padding:13px 20px;border-radius:8px;font-weight:500;box-shadow:0 12px 40px #000b;opacity:0;pointer-events:none;transition:all .2s;z-index:80;max-width:min(92vw,560px);text-align:center}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-  #toast.ok{border-color:var(--green)}
-  #toast.err{border-color:var(--red)}
+  #toast.ok{border-left:3px solid var(--gold)}
+  #toast.err{border-left:3px solid var(--red)}
 </style>
 </head>
 <body data-tab="queue">
@@ -235,7 +251,8 @@
 <!-- Setup: client id -->
 <div id="scrSetup" class="screen hidden">
   <div class="card">
-    <h1>🎤 Karaoke Queue</h1>
+    <div class="kicker">Hollywood Night</div>
+    <h1>Karaoke Queue</h1>
     <p>One-time setup: connect this page to your own Spotify developer app.</p>
     <ol>
       <li>Go to <b>developer.spotify.com/dashboard</b> and create an app (select <b>Web API</b>).</li>
@@ -251,10 +268,10 @@
 <!-- Login -->
 <div id="scrLogin" class="screen hidden">
   <div class="card" style="text-align:center">
-    <div style="font-size:64px">🎤</div>
+    <div class="kicker">Hollywood Night</div>
     <h1>Karaoke Queue</h1>
     <p>Log in with the Spotify Premium account that will play the music.</p>
-    <div class="stack" style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
       <button class="btn btn-primary btn-block" data-act="login">Connect Spotify</button>
       <button class="btn btn-ghost btn-block" data-act="reset-client">Change Client ID</button>
     </div>
@@ -264,8 +281,8 @@
 <!-- Reconnect (new permissions) -->
 <div id="scrReconnect" class="screen hidden">
   <div class="card" style="text-align:center">
-    <div style="font-size:64px">🔑</div>
-    <h1>One quick step</h1>
+    <div class="kicker">One quick step</div>
+    <h1>Reconnect Spotify</h1>
     <p>This version needs to reconnect to Spotify once, so it can ask for songs that are playable in your country. Your queue, PIN and speaker are kept.</p>
     <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
       <button class="btn btn-primary btn-block" data-act="login">Reconnect Spotify</button>
@@ -276,19 +293,21 @@
 <!-- Main app -->
 <div id="scrMain" class="hidden">
   <header class="top">
-    <div class="brand">🎤 <span>Karaoke Queue</span></div>
+    <div class="brand"><span>Karaoke Queue</span><small>Hollywood Night</small></div>
     <div class="top-right">
-      <button class="chip" data-act="device" id="deviceChip">🔈 Pick speaker</button>
-      <button class="chip" data-act="lock" id="lockChip">🔒 Host</button>
-      <button class="icon-btn" data-act="settings" aria-label="Settings">⚙︎</button>
+      <button class="chip" data-act="device" id="deviceChip">Choose speaker</button>
+      <button class="chip" data-act="lock" id="lockChip">Host</button>
+      <button class="icon-btn" data-act="settings" aria-label="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+      </button>
     </div>
   </header>
   <div id="foreign" class="banner hidden"></div>
   <main class="layout">
     <section class="panel" id="panelSearch">
       <div class="search-box">
-        <span class="mag">🔍</span>
-        <input id="q" type="search" enterkeyhint="search" placeholder="Search for a song or artist…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <span class="mag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span>
+        <input id="q" type="search" enterkeyhint="search" placeholder="Search for a song or artist" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <button class="clear hidden" data-act="clear-search" aria-label="Clear">✕</button>
       </div>
       <div id="results"></div>
@@ -304,7 +323,6 @@
 
 <div id="modalRoot"></div>
 <div id="toast"></div>
-
 <script>
 'use strict';
 /* =====================================================================
@@ -312,7 +330,7 @@
    One shared iPad, one Spotify Premium account, music on another device.
    The app owns the queue and hands Spotify one song at a time.
    ===================================================================== */
-const VERSION = '2.1';
+const VERSION = '2.2';
 
 /* ---------------- storage ---------------- */
 const LS = {
@@ -375,8 +393,10 @@ function toast(msg, kind){
   const t = $('#toast'); t.textContent = msg; t.className = 'show ' + (kind || '');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', kind === 'err' ? 5500 : 3000);
 }
-function artHtml(src){ return src ? `<img class="art" src="${esc(src)}" alt="" loading="lazy">` : `<div class="art-ph">🎵</div>`; }
-const DEVICE_ICONS = { Computer:'💻', Smartphone:'📱', Speaker:'🔊', TV:'📺', Tablet:'📱', CastVideo:'📺', CastAudio:'🔊', AVR:'🔊', Automobile:'🚗' };
+function artHtml(src, name){ return src ? `<img class="art" src="${esc(src)}" alt="" loading="lazy">` : `<div class="art-ph">${esc((name || '♪').trim().charAt(0).toUpperCase() || '♪')}</div>`; }
+const LOCK = '<span class="lk" title="Needs the host PIN"><svg viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.5" y="6" width="9" height="7" rx="1.5"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg></span>';
+function lockMark(){ return isUnlocked() ? '' : LOCK; }
+const DEVICE_LABELS = { Computer:'Computer', Smartphone:'Phone', Speaker:'Speaker', TV:'TV', Tablet:'Tablet', CastVideo:'Cast', CastAudio:'Cast', AVR:'Receiver', Automobile:'Car' };
 
 function mapTrack(t){
   const imgs = (t.album && t.album.images) || [];
@@ -523,7 +543,7 @@ function isUnlocked(){ return Date.now() < S.unlockedUntil; }
 function requirePin(reason){
   return new Promise(res => {
     if (isUnlocked()) { S.unlockedUntil = Date.now() + UNLOCK_MS; renderLock(); return res(true); }
-    openPinPad({ title: '🔒 Host PIN', sub: reason ? `Needed to ${reason}.` : '', onDone: res });
+    openPinPad({ title: 'Host PIN', sub: reason ? `Needed to ${reason}.` : '', onDone: res });
   });
 }
 function openPinPad({ title, sub, onDone, setMode }){
@@ -638,7 +658,7 @@ async function playOnDevice(entry, positionMs, method = preferredMethod()){
 function explainPlayError(e){
   if (e.noDevice) return 'Pick the speaker first.';
   if (e.missing || e.status === 404) return `Can’t find "${S.device ? S.device.name : 'the speaker'}". Open Spotify on it, play any song for a second, then pick it again.`;
-  if (e.status === 403 && /scope/i.test(e.message)) return 'Spotify permissions are missing — go to ⚙︎ Settings → Log out, then Connect Spotify again.';
+  if (e.status === 403 && /scope/i.test(e.message)) return 'Spotify permissions are missing — go to Settings → Log out, then Connect Spotify again.';
   if (e.status === 403) return 'Spotify refused: ' + e.message + ' (Premium is required, and some devices don’t allow remote control.)';
   return 'Couldn’t start the song: ' + e.message;
 }
@@ -831,10 +851,10 @@ function renderLock(){
   const c = $('#lockChip'); if (!c) return;
   if (isUnlocked()) {
     const s = Math.ceil((S.unlockedUntil - Date.now()) / 1000);
-    c.textContent = `🔓 Host ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; c.classList.add('unlocked');
-  } else { c.textContent = '🔒 Host'; c.classList.remove('unlocked'); }
+    c.textContent = `Host · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; c.classList.add('unlocked');
+  } else { c.innerHTML = 'Host' + LOCK; c.classList.remove('unlocked'); }
 }
-function renderDevice(){ $('#deviceChip').textContent = S.device ? `${DEVICE_ICONS[S.device.type] || '🔈'} ${S.device.name}` : '🔈 Pick speaker'; }
+function renderDevice(){ $('#deviceChip').textContent = S.device ? `Playing on ${S.device.name}` : 'Choose speaker'; }
 
 function nowProgress(){
   const e = S.now, p = S.player;
@@ -847,15 +867,15 @@ function renderNow(){
   const e = S.now;
   if (!e) {
     if (S.queue.length && !S.running) {
-      el.innerHTML = `<div class="now-empty"><div class="t">Ready when you are 🎉</div>
+      el.innerHTML = `<div class="now-empty"><div class="t">The house is seated.</div>
         <div class="s">${S.queue.length} song${S.queue.length > 1 ? 's' : ''} in the queue.</div>
-        <button class="btn btn-primary btn-block" data-act="start">▶ Start karaoke</button></div>`;
+        <button class="btn btn-primary btn-block" data-act="start">Start the show</button></div>`;
     } else if (S.queue.length) {
-      el.innerHTML = `<div class="now-empty"><div class="t">Paused between songs</div><div class="s">Tap to keep going.</div>
-        <button class="btn btn-primary btn-block" data-act="start">▶ Play next in queue</button></div>`;
+      el.innerHTML = `<div class="now-empty"><div class="t">Intermission.</div><div class="s">Tap to keep going.</div>
+        <button class="btn btn-primary btn-block" data-act="start">Play the next song</button></div>`;
     } else {
-      el.innerHTML = `<div class="now-empty"><div class="t">The stage is empty 🎤</div>
-        <div class="s">${S.running ? 'The next song added will start right away.' : 'Search for a song to get the party started.'}</div></div>`;
+      el.innerHTML = `<div class="now-empty"><div class="t">The stage is dark.</div>
+        <div class="s">${S.running ? 'The next song added will start right away.' : 'Search for a song to get the show started.'}</div></div>`;
     }
     return;
   }
@@ -863,10 +883,10 @@ function renderNow(){
   const starting = S.start && S.start.playId === e.playId && !S.start.ok;
   const prog = nowProgress();
   const kicker = starting ? (S.startFail ? 'Couldn’t start' : `Starting on ${esc(S.device ? S.device.name : 'speaker')}…`)
-               : playing ? 'Now singing' : ours ? 'Paused' : 'On stage';
+               : playing ? 'Now showing' : ours ? 'Paused' : 'On stage';
   el.innerHTML = `
     <div class="now-row">
-      ${e.art ? `<img class="now-art" src="${esc(e.art)}" alt="">` : `<div class="now-art ph">🎤</div>`}
+      ${e.art ? `<img class="now-art" src="${esc(e.art)}" alt="">` : `<div class="now-art ph">${esc((e.name || '♪').charAt(0).toUpperCase())}</div>`}
       <div class="now-main">
         <div class="now-kicker">${kicker}</div>
         <div class="now-label">${esc(e.label || e.name)}</div>
@@ -876,8 +896,8 @@ function renderNow(){
     <div class="bar"><i id="nowBar" style="width:${e.duration ? (prog / e.duration * 100).toFixed(1) : 0}%"></i></div>
     <div class="times"><span id="nowPos">${fmtDur(prog)}</span><span id="nowLeft">-${fmtDur(e.duration - prog)}</span></div>
     <div class="now-ctrls">
-      <button class="btn btn-ghost" data-act="${playing ? 'pause' : 'resume'}">${playing ? '⏸ Pause' : '▶ Resume'}</button>
-      <button class="btn btn-ghost" data-act="skip">⏭ Skip ${isUnlocked() ? '' : '🔒'}</button>
+      <button class="btn btn-ghost" data-act="${playing ? 'pause' : 'resume'}">${playing ? 'Pause' : 'Resume'}</button>
+      <button class="btn btn-ghost" data-act="skip">Skip${lockMark()}</button>
     </div>`;
 }
 
@@ -885,8 +905,8 @@ function renderTabs(){
   if (isWide() && S.tab === 'search') S.tab = 'queue';
   document.body.dataset.tab = S.tab;
   $('#tabs').innerHTML = `
-    <button class="tab tab-search ${S.tab === 'search' ? 'active' : ''}" data-act="tab" data-tab="search">🔍 Search</button>
-    <button class="tab ${S.tab === 'queue' ? 'active' : ''}" data-act="tab" data-tab="queue">Up next<span class="count">${S.queue.length}</span></button>
+    <button class="tab tab-search ${S.tab === 'search' ? 'active' : ''}" data-act="tab" data-tab="search">Search</button>
+    <button class="tab ${S.tab === 'queue' ? 'active' : ''}" data-act="tab" data-tab="queue">Coming up<span class="count">${S.queue.length}</span></button>
     <button class="tab ${S.tab === 'history' ? 'active' : ''}" data-act="tab" data-tab="history">Tonight<span class="count">${S.history.length}</span></button>`;
 }
 
@@ -896,21 +916,21 @@ function waitBefore(i){ let ms = currentRemaining(); for (let k = 0; k < i && k 
 function renderQueue(){
   const el = $('#tabQueue');
   if (!S.queue.length) {
-    el.innerHTML = `<div class="empty"><div class="big">📝</div>Nobody's in line yet.<br>Search for a song and tap it to add it.<br><br>
-      <button class="btn btn-ghost" data-act="import">📥 Import a playlist or CSV ${isUnlocked() ? '' : '🔒'}</button></div>`;
+    el.innerHTML = `<div class="empty"><div class="big">No one in line yet.</div>Search for a song and tap it to add it.<br><br>
+      <button class="btn btn-ghost" data-act="import">Import a playlist or CSV${lockMark()}</button></div>`;
     return;
   }
-  const lock = isUnlocked() ? '' : ' 🔒';
+  const lock = isUnlocked() ? '' : ' (host PIN)';
   let acc = currentRemaining();
   el.innerHTML = `<ul class="q-list">${S.queue.map((e, i) => {
     const wait = acc; acc += e.duration;
-    const titleLine = e.hidden ? `<span class="secret">🤫 Secret song</span>` : `${esc(e.name)} · ${esc(e.artists)}`;
+    const titleLine = e.hidden ? `<span class="secret">Sneak preview</span>` : `${esc(e.name)} · ${esc(e.artists)}`;
     const main = e.label
       ? `<div class="t1">${esc(e.label)}</div><div class="t2">${titleLine}</div>`
-      : e.hidden ? `<div class="t1 secret">🤫 Secret song</div><div class="t2">${fmtDur(e.duration)}</div>`
+      : e.hidden ? `<div class="t1 secret">Sneak preview</div><div class="t2">${fmtDur(e.duration)}</div>`
       : `<div class="t1">${esc(e.name)}</div><div class="t2">${esc(e.artists)}</div>`;
     return `<li class="q-item ${i === 0 ? 'next' : ''}">
-      <div class="q-pos">${i + 1}</div>${e.hidden ? '<div class="art-ph">🤫</div>' : artHtml(e.art)}
+      <div class="q-pos">${i + 1}</div>${e.hidden ? '<div class="art-ph">?</div>' : artHtml(e.art, e.name)}
       <div class="r-main">${main}</div>
       <div class="q-wait">${i === 0 && S.now ? 'Up next' : i === 0 ? 'First' : fmtWait(wait)}<small>${S.now || i > 0 ? '≈ ' + fmtClock(Date.now() + wait) : ''}</small></div>
       <div class="q-actions">
@@ -920,7 +940,7 @@ function renderQueue(){
         <button class="q-btn del" data-act="q-del" data-i="${i}" title="Remove${lock}">✕</button>
       </div></li>`;
   }).join('')}</ul>
-  ${isUnlocked() ? '' : '<div class="lock-hint">🔒 Reordering and removing need the host PIN</div>'}`;
+  ${isUnlocked() ? '' : `<div class="lock-hint">Reordering and removing need the host PIN${LOCK}</div>`}`;
 }
 
 function renderHistory(){
@@ -928,14 +948,14 @@ function renderHistory(){
   const list = S.history.slice().reverse();
   el.innerHTML = `
     <div class="h-head">
-      <button class="btn btn-cyan" data-act="save-playlist" ${S.history.length ? '' : 'disabled'}>💾 Save as Spotify playlist</button>
+      <button class="btn btn-cyan" data-act="save-playlist" ${S.history.length ? '' : 'disabled'}>Save as Spotify playlist</button>
       <button class="btn btn-ghost" data-act="clear-history" ${S.history.length ? '' : 'disabled'}>Clear</button>
     </div>
     ${list.length ? `<ul class="q-list">${list.map(h => `
-      <li class="q-item"><div class="h-time">${fmtClock(h.playedAt)}</div>${artHtml(h.art)}
+      <li class="q-item"><div class="h-time">${fmtClock(h.playedAt)}</div>${artHtml(h.art, h.name)}
         <div class="r-main"><div class="t1">${esc(h.label || h.name)}</div><div class="t2">${h.label ? esc(h.name) + ' · ' : ''}${esc(h.artists)}</div></div>
       </li>`).join('')}</ul>`
-    : `<div class="empty"><div class="big">🌙</div>Songs sung tonight will show up here.</div>`}`;
+    : `<div class="empty"><div class="big">The credits roll here.</div>Every song sung tonight will be listed.</div>`}`;
 }
 
 function renderResults(){
@@ -943,7 +963,7 @@ function renderResults(){
   const sr = S.search;
   $('.search-box .clear').classList.toggle('hidden', !sr.q);
   if (!sr.q.trim()) {
-    el.innerHTML = `<div class="empty"><div class="big">🎶</div>Search for a song, then tap it.<br>It goes to the <b style="color:var(--text)">end of the queue</b> by default.</div>`;
+    el.innerHTML = `<div class="empty"><div class="big">What\u2019s playing tonight?</div>Search for a song, then tap it.<br>It goes to the <b style="color:var(--text)">end of the queue</b> by default.</div>`;
     return;
   }
   if (!sr.items.length) { el.innerHTML = `<div class="empty">${sr.loading ? 'Searching…' : sr.error ? esc(sr.error) : 'No songs found.'}</div>`; return; }
@@ -951,7 +971,7 @@ function renderResults(){
   const hset = new Set(S.history.map(e => e.uri));
   el.innerHTML = sr.items.map((t, i) => `
     <button class="r-item" data-act="pick" data-i="${i}" style="${t.playable ? '' : 'opacity:.45'}">
-      ${artHtml(t.art)}
+      ${artHtml(t.art, t.name)}
       <div class="r-main">
         <div class="t1">${esc(t.name)}${t.explicit ? '<span class="badge badge-e">E</span>' : ''}${!t.playable ? '<span class="badge badge-e">NOT AVAILABLE</span>' : qset.has(t.uri) ? '<span class="badge badge-q">IN QUEUE</span>' : hset.has(t.uri) ? '<span class="badge badge-h">SUNG</span>' : ''}</div>
         <div class="t2">${esc(t.artists)}</div>
@@ -975,21 +995,21 @@ function renderBanner(){
       detail = p && p.deviceName ? `Spotify says: ${p.uri ? (p.isPlaying ? 'playing' : 'paused on') + ' “' + esc(p.name) + '”' : 'nothing loaded'} on ${esc(p.deviceName)}.` : 'Spotify says: no device is active right now.';
       if (lp) detail += lp.status === 202 ? ' Spotify couldn’t reach the speaker.' : lp.status < 300 ? ' Spotify accepted the request.' : ` Play request → HTTP ${lp.status}.`;
     }
-    return show(`<div class="msg">⚠️ <b>Spotify couldn’t start “${esc(S.now.name)}” on ${dev}.</b>
+    return show(`<div class="msg"><b>Spotify couldn’t start “${esc(S.now.name)}” on ${dev}.</b>
         The song may not be available in your country, or Spotify on ${dev} isn’t responding.
         <div class="t2" style="white-space:normal;margin-top:4px">${detail}</div></div>
-      <button class="btn btn-cyan" data-act="f-retry">↻ Try again</button>
-      <button class="btn btn-ghost" data-act="f-skipfail">⏭ Skip this song</button>
-      <button class="btn btn-ghost" data-act="device">🔈 Speaker</button>`);
+      <button class="btn btn-cyan" data-act="f-retry">Try again</button>
+      <button class="btn btn-ghost" data-act="f-skipfail">Skip this song</button>
+      <button class="btn btn-ghost" data-act="device">Speaker</button>`);
   }
   if (S.pollError) {
-    return show(`<div class="msg">⚠️ <b>Can’t check what Spotify is playing.</b> ${esc(S.pollError)} Songs may not move on automatically until this clears.</div>`);
+    return show(`<div class="msg"><b>Can’t check what Spotify is playing.</b> ${esc(S.pollError)} Songs may not move on automatically until this clears.</div>`);
   }
   const f = S.foreign;
   if (!f) { el.classList.add('hidden'); return; }
-  show(`<div class="msg">⚠️ ${f.uri ? `Spotify is playing <b>${esc(f.name)}</b>${f.artists ? ' by ' + esc(f.artists) : ''}, which isn’t from the karaoke queue.` : `<b>Spotify isn’t playing the karaoke song</b> right now.`}</div>
-    <button class="btn btn-cyan" data-act="f-resume">↩ Resume ${esc(S.now.label || S.now.name)}</button>
-    <button class="btn btn-ghost" data-act="f-next" ${S.queue.length ? '' : 'disabled'}>⏭ Next in queue</button>
+  show(`<div class="msg">${f.uri ? `Spotify is playing <b>${esc(f.name)}</b>${f.artists ? ' by ' + esc(f.artists) : ''}, which isn’t from the karaoke queue.` : `<b>Spotify isn’t playing the karaoke song</b> right now.`}</div>
+    <button class="btn btn-cyan" data-act="f-resume">Resume ${esc(S.now.label || S.now.name)}</button>
+    <button class="btn btn-ghost" data-act="f-next" ${S.queue.length ? '' : 'disabled'}>Next in queue</button>
     <button class="btn btn-ghost" data-act="f-dismiss">Dismiss</button>`);
 }
 
@@ -1046,7 +1066,7 @@ function duplicateInfo(uri){
   const out = [];
   if (S.now && S.now.uri === uri) out.push('It’s playing right now.');
   const qi = S.queue.findIndex(e => e.uri === uri);
-  if (qi >= 0 && S.queue[qi].hidden) out.push('Someone already picked this as a secret song 🤫');
+  if (qi >= 0 && S.queue[qi].hidden) out.push('Someone already picked this as a sneak preview.');
   else if (qi >= 0) out.push(`It’s already in the queue (#${qi + 1}${S.queue[qi].label ? ', ' + esc(S.queue[qi].label) : ''}).`);
   const h = S.history.filter(e => e.uri === uri && !(S.now && e.playId === S.now.playId));
   if (h.length) out.push(`It was already sung tonight at ${fmtClock(h[h.length - 1].playedAt)}${h[h.length - 1].label ? ' by ' + esc(h[h.length - 1].label) : ''}.`);
@@ -1057,7 +1077,7 @@ function addToQueue(entry, where){
   if (where === 'next') S.queue.unshift(entry); else S.queue.push(entry);
   save(); renderAll();
   const pos = where === 'next' ? 1 : S.queue.length;
-  if (S.running && !S.now) { startNext(); toast('Added — starting now! 🎤', 'ok'); return; }
+  if (S.running && !S.now) { startNext(); toast('Added — starting now.', 'ok'); return; }
   toast(`Added — #${pos} in line${S.now ? ', starts ' + fmtWait(waitBefore(pos - 1)) : ''}`, 'ok');
 }
 
@@ -1067,20 +1087,20 @@ function openAddSheet(track){
   let hidden = false;
   const pos = S.queue.length + 1;
   const m = openModal(`
-    <div class="song-head">${track.art ? `<img src="${esc(track.art)}" alt="">` : '<div class="art-ph">🎵</div>'}
+    <div class="song-head">${track.art ? `<img src="${esc(track.art)}" alt="">` : `<div class="art-ph">${esc(track.name.charAt(0).toUpperCase())}</div>`}
       <div class="r-main"><div class="t1" style="white-space:normal">${esc(track.name)}</div><div class="t2">${esc(track.artists)} · ${fmtDur(track.duration)}</div></div></div>
-    ${dups.length ? `<div class="warn">⚠️ Heads up: ${dups.join(' ')}</div>` : ''}
+    ${dups.length ? `<div class="warn">Heads up: ${dups.join(' ')}</div>` : ''}
     <label class="field"><span>Name in the queue (optional)</span>
       <input id="labelIn" maxlength="40" placeholder="Singer name, code name, anything…" autocomplete="off" autocorrect="off" spellcheck="false"></label>
     <button class="toggle" data-act="toggle-hidden"><span class="sw"></span>
-      <span><b>Surprise! 🤫</b><small>Hide the song title in the queue until it plays</small></span></button>
+      <span><b>Sneak preview</b><small>Keep the song title hidden in the queue until it plays</small></span></button>
     <div class="stack">
-      <button class="btn btn-primary" data-act="add-end">➕ Add to queue</button>
+      <button class="btn btn-primary" data-act="add-end">Add to queue</button>
       <div class="info-line">Goes to the end — #${pos} in line${S.now || S.queue.length ? ', starts ' + fmtWait(waitBefore(S.queue.length)) : ''}</div>
       <div class="divider"></div>
       <div class="row2">
-        <button class="btn btn-cyan" data-act="add-next">⏭ Play next ${isUnlocked() ? '' : '🔒'}</button>
-        <button class="btn btn-danger" data-act="add-now">⚡ Play now ${isUnlocked() ? '' : '🔒'}</button>
+        <button class="btn btn-cyan" data-act="add-next">Play next${lockMark()}</button>
+        <button class="btn btn-danger" data-act="add-now">Play now${lockMark()}</button>
       </div>
       <button class="btn btn-ghost" data-act="cancel">Cancel</button>
     </div>`, {
@@ -1102,18 +1122,18 @@ async function playNowFlow(entry){
     const cur = S.now;
     const curName = cur.label ? `${esc(cur.label)} — ${esc(cur.name)}` : esc(cur.name);
     const choice = await confirmDialog({
-      title: '⚠️ Stop the current song?',
+      title: 'Stop the current song?',
       body: `<b style="color:var(--text)">${curName}</b> is on stage. What should happen to it?`,
       buttons: [
-        { label: '▶ Play now — put current song back next in line', value: 'bump', cls: 'btn-danger' },
-        { label: '▶ Play now — drop the current song', value: 'drop', cls: 'btn-danger' },
+        { label: 'Play now — current song goes back next in line', value: 'bump', cls: 'btn-danger' },
+        { label: 'Play now — drop the current song', value: 'drop', cls: 'btn-danger' },
         { label: 'Cancel', value: null }
       ]
     });
     if (!choice) return false;
     if (choice === 'bump') { S.history = S.history.filter(h => h.playId !== cur.playId); S.queue.unshift(stripPlay(cur)); }
   } else {
-    if (!(await confirmDialog({ title: 'Play this now?', body: 'It will start playing immediately.', buttons: yesNo('▶ Play now') }))) return false;
+    if (!(await confirmDialog({ title: 'Play this now?', body: 'It will start playing immediately.', buttons: yesNo('Play now') }))) return false;
   }
   clearTimeout(endTimer);
   try { await playEntry(entry); return true; } catch(e){ save(); renderAll(); return false; }
@@ -1139,7 +1159,7 @@ function openDevicePicker(note){
   if (document.querySelector('#devList')) return;
   let devices = [];
   const m = openModal(`
-    <h2>🔈 Where should the music play?</h2>
+    <h2>Where should the music play?</h2>
     <p>${note ? esc(note) + ' ' : ''}Open Spotify on the speaker device (computer, TV, phone…) and play any song once so it shows up here.</p>
     <div id="devList" class="stack"><div class="empty">Looking for devices…</div></div>
     <div class="stack"><button class="btn btn-ghost" data-act="refresh">↻ Refresh</button><button class="btn btn-ghost" data-act="close">Done</button></div>`, {
@@ -1161,9 +1181,9 @@ function openDevicePicker(note){
       devices = ((j && j.devices) || []).filter(d => d.id && !d.is_restricted);
       list.innerHTML = devices.length ? devices.map((d, i) => `
         <button class="dev ${S.device && S.device.id === d.id ? 'sel' : ''}" data-act="pick" data-i="${i}">
-          <span class="ico">${DEVICE_ICONS[d.type] || '🔈'}</span>
-          <span class="r-main"><div class="t1">${esc(d.name)}</div><div class="t2">${esc(d.type)}${d.is_active ? ' · active now' : ''}</div></span>
-          ${S.device && S.device.id === d.id ? '✅' : ''}
+          <span class="ico">${esc(DEVICE_LABELS[d.type] || d.type)}</span>
+          <span class="r-main"><div class="t1">${esc(d.name)}</div><div class="t2">${d.is_active ? 'Active now' : 'Available'}</div></span>
+          ${S.device && S.device.id === d.id ? '<span style="color:var(--gold)">Selected</span>' : ''}
         </button>`).join('')
         : '<div class="empty">No devices found yet.<br>Open Spotify on the speaker device, press play on any song, then tap Refresh.</div>';
     }catch(e){ list.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
@@ -1177,18 +1197,18 @@ function openDevicePicker(note){
 async function openSettings(){
   if (!(await requirePin('open settings'))) return;
   openModal(`
-    <h2>⚙︎ Host settings</h2>
+    <h2>Host settings</h2>
     <div class="stack">
-      <button class="btn btn-cyan" data-act="import">📥 Import songs (playlist or CSV)</button>
-      <button class="btn btn-ghost" data-act="device">🔈 Change speaker${S.device ? ' (' + esc(S.device.name) + ')' : ''}</button>
-      <button class="btn btn-ghost" data-act="pin">🔢 Change host PIN</button>
-      <button class="btn btn-ghost" data-act="lock">🔒 Lock host controls now</button>
+      <button class="btn btn-cyan" data-act="import">Import songs (playlist or CSV)</button>
+      <button class="btn btn-ghost" data-act="device">Change speaker${S.device ? ' (' + esc(S.device.name) + ')' : ''}</button>
+      <button class="btn btn-ghost" data-act="pin">Change host PIN</button>
+      <button class="btn btn-ghost" data-act="lock">Lock host controls now</button>
       <div class="divider"></div>
-      <button class="btn btn-ghost" data-act="stop" ${S.running ? '' : 'disabled'}>⏹ Stop auto-play after this song</button>
-      <button class="btn btn-danger" data-act="clear-queue" ${S.queue.length ? '' : 'disabled'}>🗑 Clear the queue (${S.queue.length})</button>
-      <button class="btn btn-danger" data-act="new-party">🎉 New party (clear queue + tonight's list)</button>
+      <button class="btn btn-ghost" data-act="stop" ${S.running ? '' : 'disabled'}>Stop auto-play after this song</button>
+      <button class="btn btn-danger" data-act="clear-queue" ${S.queue.length ? '' : 'disabled'}>Clear the queue (${S.queue.length})</button>
+      <button class="btn btn-danger" data-act="new-party">New show (clear queue + tonight\u2019s list)</button>
       <div class="divider"></div>
-      <button class="btn btn-ghost" data-act="diag">🩺 Diagnostics</button>
+      <button class="btn btn-ghost" data-act="diag">Diagnostics</button>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
       <div class="info-line">Karaoke Queue v${VERSION}</div>
@@ -1205,8 +1225,8 @@ async function openSettings(){
       if (act === 'clear-queue' && await confirmDialog({ title: 'Clear the whole queue?', body: `${S.queue.length} song(s) will be removed.`, buttons: yesNo('Clear queue') })) {
         S.queue = []; save(); renderAll(); toast('Queue cleared');
       }
-      if (act === 'new-party' && await confirmDialog({ title: 'Start a new party?', body: 'Clears the queue and tonight’s list. (Save tonight’s list as a playlist first if you want it.)', buttons: yesNo('Start fresh') })) {
-        S.queue = []; S.history = []; S.now = null; S.seen = null; S.start = null; S.startFail = null; S.running = false; S.foreign = null; save(); renderAll(); toast('Fresh start 🎉');
+      if (act === 'new-party' && await confirmDialog({ title: 'Start a new show?', body: 'Clears the queue and tonight’s list. (Save tonight’s list as a playlist first if you want it.)', buttons: yesNo('Start fresh') })) {
+        S.queue = []; S.history = []; S.now = null; S.seen = null; S.start = null; S.startFail = null; S.running = false; S.foreign = null; save(); renderAll(); toast('Fresh start.');
       }
       if (act === 'logout' && await confirmDialog({ title: 'Log out of Spotify?', body: 'The queue is kept on this iPad.', buttons: yesNo('Log out') })) {
         S.tokens = null; LS.del('tokens'); clearTimeout(pollTimer); showScreen();
@@ -1223,16 +1243,16 @@ async function saveHistoryPlaylist(){
     toast('Saving playlist…');
     const pl = await api('POST', '/me/playlists', { name, public: false, description: 'Songs sung tonight, saved from Karaoke Queue.' });
     for (let i = 0; i < uris.length; i += 100) await api('POST', `/playlists/${pl.id}/items`, { uris: uris.slice(i, i + 100) });
-    toast(`Saved "${name}" to your Spotify 💾`, 'ok');
+    toast(`Saved "${name}" to your Spotify.`, 'ok');
   }catch(e){ toast('Couldn’t save the playlist: ' + e.message, 'err'); }
 }
 
 async function openDiagnostics(){
   let extra = '', who = '…';
-  const m = openModal(`<h2>🩺 Diagnostics</h2><p>Screenshot this if something isn’t working.</p>
+  const m = openModal(`<h2>Diagnostics</h2><p>Screenshot this if something isn’t working.</p>
     <div id="diagBody" style="font:13px/1.5 ui-monospace,Menlo,monospace;color:var(--text);-webkit-user-select:text;user-select:text;word-break:break-word"></div>
     <div class="stack">
-      <button class="btn btn-cyan" data-act="testplay">🔊 Test: play ${S.now ? 'the current song' : 'the next song'} on the speaker</button>
+      <button class="btn btn-cyan" data-act="testplay">Test: play ${S.now ? 'the current song' : 'the next song'} on the speaker</button>
       <button class="btn btn-ghost" data-act="test">Test: list devices + what’s playing</button>
       <button class="btn btn-ghost" data-act="close">Close</button></div>`, {
     wide: true,
@@ -1260,7 +1280,7 @@ async function openDiagnostics(){
           try { const st = await api('GET', '/me/player'); playing = !!(st && st.is_playing && st.item);
                 lines.push(`  STATE: ${st ? `${st.is_playing ? 'PLAYING' : 'paused'} "${st.item ? st.item.name : '-'}" on ${st.device ? st.device.name : '?'}` : 'no active device'}`); }
           catch(err){ lines.push('  STATE error: ' + err.message); }
-          if (playing) { LS.set('playMethod', used); lines.push(`✅ "${used}" works on your account — the app will use it.`); break; }
+          if (playing) { LS.set('playMethod', used); lines.push(`OK — "${used}" works on your account — the app will use it.`); break; }
         }
         extra = lines.join('\n'); draw(); poll();
       }
@@ -1294,13 +1314,13 @@ const CSV_TEMPLATE = 'Song,Artist,Singer,Secret\nDancing Queen,ABBA,Maria,\nBohe
 
 function openImport(){
   const m = openModal(`
-    <h2>📥 Import songs</h2>
+    <h2>Import songs</h2>
     <p>Imported songs are added to the <b style="color:var(--text)">end of the queue</b>.</p>
     <div class="stack">
-      <button class="imp-choice" data-act="pl"><span class="ico">🎧</span><span><b>From a Spotify playlist</b><div class="t2">Any playlist you own or collaborate on</div></span></button>
-      <button class="imp-choice" data-act="file"><span class="ico">📄</span><span><b>From a CSV file</b><div class="t2">Columns: Song, Artist, Singer (optional), Secret (optional)</div></span></button>
-      <button class="imp-choice" data-act="paste"><span class="ico">📋</span><span><b>Paste CSV text</b><div class="t2">One song per line</div></span></button>
-      <a class="btn btn-ghost" style="text-decoration:none" download="karaoke-template.csv" href="data:text/csv;charset=utf-8,${encodeURIComponent(CSV_TEMPLATE)}">⬇︎ Download a template CSV</a>
+      <button class="imp-choice" data-act="pl"><span class="ico">Spotify</span><span><b>From a Spotify playlist</b><div class="t2">Any playlist you own or collaborate on</div></span></button>
+      <button class="imp-choice" data-act="file"><span class="ico">File</span><span><b>From a CSV file</b><div class="t2">Columns: Song, Artist, Singer (optional), Secret (optional)</div></span></button>
+      <button class="imp-choice" data-act="paste"><span class="ico">Paste</span><span><b>Paste CSV text</b><div class="t2">One song per line</div></span></button>
+      <a class="btn btn-ghost" style="text-decoration:none" download="karaoke-template.csv" href="data:text/csv;charset=utf-8,${encodeURIComponent(CSV_TEMPLATE)}">Download a template CSV</a>
       <button class="btn btn-ghost" data-act="close">Cancel</button>
     </div>
     <input type="file" id="csvFile" accept=".csv,.txt,text/csv,text/plain" class="hidden">`, {
@@ -1319,7 +1339,7 @@ function openImport(){
 
 function openCsvPaste(){
   const m = openModal(`
-    <h2>📋 Paste CSV</h2>
+    <h2>Paste CSV</h2>
     <p>One song per line: <b style="color:var(--text)">Song, Artist, Singer, Secret</b>. Singer and Secret are optional. A header row is fine.</p>
     <textarea class="csv" id="csvText" placeholder="Dancing Queen, ABBA, Maria&#10;Bohemian Rhapsody, Queen&#10;I Will Survive, Gloria Gaynor, Agent X, yes"></textarea>
     <div class="stack"><button class="btn btn-primary" data-act="go">Find songs</button><button class="btn btn-ghost" data-act="close">Cancel</button></div>`, {
@@ -1382,7 +1402,7 @@ async function importCsvText(text){
   if (!rows.length) { toast('No songs found in that CSV. The first column should be the song title.', 'err'); return; }
   if (rows.length > 150) { toast(`That's ${rows.length} rows — importing the first 150.`); rows.length = 150; }
   let cancelled = false;
-  const m = openModal(`<h2>🔎 Finding songs on Spotify…</h2><p id="impProg">0 / ${rows.length}</p>
+  const m = openModal(`<h2>Finding songs on Spotify…</h2><p id="impProg">0 / ${rows.length}</p>
     <div class="bar"><i id="impBar"></i></div><div class="stack"><button class="btn btn-ghost" data-act="cancel">Cancel</button></div>`,
     { dismissable: false, onClick(act, el, mm){ if (act === 'cancel') { cancelled = true; mm.close(); } } });
   const items = [];
@@ -1405,7 +1425,7 @@ async function importCsvText(text){
 
 async function openPlaylistPicker(){
   let lists = [];
-  const m = openModal(`<h2>🎧 Pick a playlist</h2><p>Only playlists you own or collaborate on can be imported (a Spotify rule).</p>
+  const m = openModal(`<h2>Pick a playlist</h2><p>Only playlists you own or collaborate on can be imported (a Spotify rule).</p>
     <div id="plList"><div class="empty">Loading your playlists…</div></div>
     <div class="stack"><button class="btn btn-ghost" data-act="close">Cancel</button></div>`, {
     onClick(act, el, mm){
@@ -1428,7 +1448,7 @@ async function openPlaylistPicker(){
     const box = m.el.querySelector('#plList'); if (!box) return;
     box.innerHTML = lists.length ? lists.map((p, i) => `
       <button class="pl-row" data-act="pl-pick" data-i="${i}" ${p.mine ? '' : 'disabled'}>
-        ${artHtml(p.art)}
+        ${artHtml(p.art, p.name)}
         <div class="r-main"><div class="t1">${esc(p.name)}</div>
         <div class="t2">${p.total != null ? p.total + ' songs' : ''}${p.mine ? '' : ' · by ' + esc(p.owner) + ' — not yours, can’t import'}</div></div>
       </button>`).join('') : '<div class="empty">No playlists found on this account.</div>';
@@ -1496,20 +1516,20 @@ function openImportReview(items, sourceName){
   function draw(){
     const n = items.filter(it => it.checked && it.choice >= 0).length;
     const btn = m.el.querySelector('#impAdd');
-    btn.textContent = `➕ Add ${n} song${n === 1 ? '' : 's'} to queue`; btn.disabled = !n;
+    btn.textContent = `Add ${n} song${n === 1 ? '' : 's'} to queue`; btn.disabled = !n;
     m.el.querySelector('#impList').innerHTML = items.map((it, i) => {
       const t = it.choice >= 0 ? it.cands[it.choice] : (it.unavailable ? it.cands[0] : null);
       const tag = it.unavailable ? '<span class="badge badge-e">NOT AVAILABLE</span>' : t && inQ.has(t.uri) ? '<span class="badge badge-q">IN QUEUE</span>' : t && sung.has(t.uri) ? '<span class="badge badge-h">SUNG</span>' : '';
-      const srcLine = it.src ? `<div class="imp-src">CSV: ${esc(it.src.song)}${it.src.artist ? ' — ' + esc(it.src.artist) : ''}${it.label ? ' · 🎤 ' + esc(it.label) : ''}${it.hidden ? ' · 🤫 secret' : ''}</div>` : '';
+      const srcLine = it.src ? `<div class="imp-src">CSV: ${esc(it.src.song)}${it.src.artist ? ' — ' + esc(it.src.artist) : ''}${it.label ? ' · Singer: ' + esc(it.label) : ''}${it.hidden ? ' · sneak preview' : ''}</div>` : '';
       const row = `<div class="imp-row ${it.checked ? '' : 'off'}">
         <button class="cb ${it.checked ? 'on' : ''}" data-act="tog" data-i="${i}">${it.checked ? '✓' : ''}</button>
-        ${t ? artHtml(t.art) : '<div class="art-ph">❓</div>'}
+        ${t ? artHtml(t.art, t.name) : '<div class="art-ph">?</div>'}
         <div class="r-main">${t ? `<div class="t1">${esc(t.name)}${tag}</div><div class="t2">${esc(t.artists)} · ${fmtDur(t.duration)}</div>` : `<div class="t1" style="color:var(--red)">No playable match found</div>`}${srcLine}</div>
         ${it.src && it.cands.length ? `<button class="imp-change" data-act="change" data-i="${i}">${open === i ? 'Close' : 'Change'}</button>` : ''}
       </div>`;
       const cands = open === i ? `<div class="imp-cands">${it.cands.map((c, ci) => `
-        <button class="imp-cand ${ci === it.choice ? 'sel' : ''}" data-act="cand" data-r="${i}" data-c="${ci}">${artHtml(c.art)}
-          <div class="r-main"><div class="t1" style="font-size:15px">${esc(c.name)}</div><div class="t2">${esc(c.artists)} · ${fmtDur(c.duration)}</div></div>${ci === it.choice ? '✅' : ''}</button>`).join('')}
+        <button class="imp-cand ${ci === it.choice ? 'sel' : ''}" data-act="cand" data-r="${i}" data-c="${ci}">${artHtml(c.art, c.name)}
+          <div class="r-main"><div class="t1" style="font-size:15px">${esc(c.name)}</div><div class="t2">${esc(c.artists)} · ${fmtDur(c.duration)}</div></div>${ci === it.choice ? '<span style="color:var(--gold)">✓</span>' : ''}</button>`).join('')}
         <button class="imp-cand" data-act="cand" data-r="${i}" data-c="-1"><div class="r-main"><div class="t1" style="font-size:15px;color:var(--muted)">None of these — skip this song</div></div></button></div>` : '';
       return row + cands;
     }).join('');
