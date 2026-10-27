@@ -622,12 +622,15 @@ async function sendPlay(entry, positionMs, mode = 'normal'){
     if (d === null) { const e = new Error(`"${S.device.name}" isn’t in your Spotify devices right now`); e.status = 404; e.missing = true; throw e; }
   }
   const devId = S.device.id;
+  // Normally just "play this song on that device" — that's all Spotify needs.
+  // Only on the last retry, and only if the speaker isn't the active one, hand playback over first
+  // (without auto-playing, which can leave Spotify stuck in an empty "playing" state).
   const active = S.player && S.player.deviceId === devId;
-  if (mode === 'wake' || (mode === 'normal' && !active)) {
+  if (mode === 'wake' && !active) {
     try {
-      await api('PUT', '/me/player', { device_ids: [devId], play: mode === 'wake' });
-      await sleep(2000);
-    } catch(e){ if (e.status === 404) throw e; /* otherwise try playing anyway */ }
+      await api('PUT', '/me/player', { device_ids: [devId], play: false });
+      await sleep(1500);
+    } catch(e){ if (e.status === 404) throw e; }
   }
   await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(devId), { uris: [entry.uri], position_ms: Math.max(0, positionMs|0) });
 }
@@ -1152,7 +1155,7 @@ async function openSettings(){
       <button class="btn btn-ghost" data-act="diag">🩺 Diagnostics</button>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
-      <div class="info-line">Karaoke Queue v1.7</div>
+      <div class="info-line">Karaoke Queue v1.8</div>
     </div>`, {
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
@@ -1226,7 +1229,7 @@ async function openDiagnostics(){
   function draw(){
     const p = S.player, sn = S.seen;
     m.el.querySelector('#diagBody').innerHTML = esc([
-      'Version: v1.7',
+      'Version: v1.8',
       'Account: ' + who,
       'Scopes: ' + (S.tokens && S.tokens.scope != null ? S.tokens.scope : 'unknown (logged in before v1.3)'),
       'Speaker: ' + (S.device ? `${S.device.name} [${S.device.type}] id=${S.device.id.slice(0, 8)}…` : 'none'),
