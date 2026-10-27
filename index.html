@@ -312,7 +312,7 @@
    One shared iPad, one Spotify Premium account, music on another device.
    The app owns the queue and hands Spotify one song at a time.
    ===================================================================== */
-const VERSION = '2.0';
+const VERSION = '2.1';
 
 /* ---------------- storage ---------------- */
 const LS = {
@@ -381,7 +381,7 @@ const DEVICE_ICONS = { Computer:'💻', Smartphone:'📱', Speaker:'🔊', TV:'�
 function mapTrack(t){
   const imgs = (t.album && t.album.images) || [];
   const pick = imgs.slice().sort((a, b) => (a.width || 0) - (b.width || 0)).find(i => (i.width || 300) >= 120) || imgs[0];
-  return { uri: t.uri, id: t.id, name: t.name, artists: (t.artists || []).map(a => a.name).join(', '),
+  return { uri: t.uri, id: t.id, albumUri: (t.album && t.album.uri) || '', name: t.name, artists: (t.artists || []).map(a => a.name).join(', '),
            art: pick ? pick.url : '', duration: t.duration_ms || 0, explicit: !!t.explicit,
            playable: t.is_playable !== false && !t.is_local };
 }
@@ -593,20 +593,46 @@ async function resolveDevice(){
   }catch(e){ return undefined; }
 }
 
-async function playOnDevice(uri, positionMs){
+// How to ask Spotify to play one song:
+//  'context' = play the song's ALBUM, starting at this song (what Spotify's own apps do when you tap a song)
+//  'uris'    = play just this song by itself
+// Since ~Sept 2026 some Spotify players accept 'uris' (HTTP 204) but then play nothing, so 'context' is the default.
+// Whichever method actually starts music on your account is remembered.
+function preferredMethod(){ return LS.get('playMethod', 'context'); }
+function otherMethod(m){ return m === 'context' ? 'uris' : 'context'; }
+
+async function ensureAlbum(entry){
+  if (entry.albumUri || !entry.id) return entry.albumUri;
+  try {
+    const t = await api('GET', `/tracks/${entry.id}?market=${MARKET}`);
+    entry.albumUri = (t && t.album && t.album.uri) || '';
+    if (t && t.uri && t.uri !== entry.uri && t.is_playable !== false) entry.uri = t.uri;   // playable version for your country
+    save();
+  } catch(e){}
+  return entry.albumUri;
+}
+
+async function playOnDevice(entry, positionMs, method = preferredMethod()){
   if (!S.device) { const e = new Error('no device'); e.noDevice = true; throw e; }
-  const send = () => api('PUT', '/me/player/play?device_id=' + encodeURIComponent(S.device.id), { uris: [uri], position_ms: Math.max(0, positionMs | 0) });
-  try { await send(); }
+  const pos = Math.max(0, positionMs | 0);
+  if (method === 'context' && !(await ensureAlbum(entry))) method = 'uris';
+  const body = m => m === 'context' ? { context_uri: entry.albumUri, offset: { uri: entry.uri }, position_ms: pos } : { uris: [entry.uri], position_ms: pos };
+  const send = m => api('PUT', '/me/player/play?device_id=' + encodeURIComponent(S.device.id), body(m));
+  try { await send(method); }
   catch(e){
-    if (e.status !== 404) throw e;
-    const d = await resolveDevice();
-    if (!d) { e.missing = true; throw e; }
-    await send();
+    if (e.status === 404 && /device/i.test(e.message)) {          // speaker's ID changed — find it again
+      const d = await resolveDevice();
+      if (!d) { e.missing = true; throw e; }
+      await send(method);
+    } else if (method === 'context' && e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 429) {
+      method = 'uris'; await send(method);                           // album start refused — play the song by itself
+    } else throw e;
   }
-  if (repeatOffFor !== S.device.id) {   // a single song on repeat would never "end"
+  if (repeatOffFor !== S.device.id) {   // a song on repeat would never "end"
     repeatOffFor = S.device.id;
     api('PUT', '/me/player/repeat?state=off&device_id=' + encodeURIComponent(S.device.id)).catch(() => { repeatOffFor = null; });
   }
+  return method;
 }
 
 function explainPlayError(e){
@@ -620,7 +646,8 @@ function explainPlayError(e){
 async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
   if (!S.device) { openDevicePicker('Pick the speaker first, then try again.'); const e = new Error('no device'); e.noDevice = true; throw e; }
   if (!(positionMs > 0 && positionMs < entry.duration - 5000)) positionMs = 0;
-  try { await playOnDevice(entry.uri, positionMs); }
+  let method;
+  try { method = await playOnDevice(entry, positionMs); }
   catch(e){
     toast(explainPlayError(e), 'err');
     if (e.missing || e.noDevice) openDevicePicker();
@@ -632,18 +659,21 @@ async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
   S.now = Object.assign({}, entry, { playId, startedAt: keep ? S.now.startedAt : Date.now() });
   S.running = true;
   S.seen = null;
-  S.start = { playId, sentAt: Date.now(), attempts: 1, pos: positionMs, nudged: false };
+  S.start = { playId, sentAt: Date.now(), attempts: 1, pos: positionMs, nudged: false, method };
   S.startFail = null; S.foreign = null; S.dismissedForeign = null;
   save(); renderAll(); keepAwake();
   schedulePoll(2000);
 }
 
-async function startNext(){
+async function startNext(fromEnd){
   if (advancing) return;
   advancing = true; clearTimeout(endTimer);
   try{
     const next = S.queue[0];
-    if (!next) { S.now = null; S.seen = null; S.start = null; S.startFail = null; save(); renderAll(); return; }
+    if (!next) {
+      // last song finished: stop Spotify from rolling on into the rest of the album
+      if (fromEnd && S.device) api('PUT', '/me/player/pause?device_id=' + encodeURIComponent(S.device.id)).catch(() => {});
+      S.now = null; S.seen = null; S.start = null; S.startFail = null; save(); renderAll(); return; }
     S.queue.shift(); save();
     try { await playEntry(next); }
     catch(e){ S.queue.unshift(next); S.now = null; S.start = null; save(); renderAll(); }
@@ -714,7 +744,7 @@ function evaluate(){
 
   // 1) We just asked Spotify to start this song — wait until it really plays.
   if (st && !st.ok) {
-    if (ours && p.isPlaying) { st.ok = true; S.startFail = null; }
+    if (ours && p.isPlaying) { st.ok = true; S.startFail = null; if (st.method) LS.set('playMethod', st.method); }
     else {
       const age = Date.now() - st.sentAt;
       if (ours && !st.nudged && age > 3000) {
@@ -724,7 +754,8 @@ function evaluate(){
       } else if (age > 9000) {
         if (st.attempts < 2) {
           st.attempts++; st.sentAt = Date.now(); st.nudged = false;
-          playOnDevice(e.uri, st.pos).catch(err => { S.startFail = { msg: explainPlayError(err) }; renderBanner(); });
+          st.method = otherMethod(st.method || preferredMethod());     // second try: the other way of asking
+          playOnDevice(e, st.pos, st.method).then(m => { st.method = m; }).catch(err => { S.startFail = { msg: explainPlayError(err) }; renderBanner(); });
         } else if (!S.startFail) S.startFail = { msg: '' };
       }
       return;
@@ -734,7 +765,7 @@ function evaluate(){
   // 2) Spotify is on our song
   if (ours) {
     if (!p.isPlaying && p.progress < 3000 && S.seen && S.seen.playId === e.playId && S.seen.progress > e.duration - 12000) {
-      if (S.running) startNext();            // it finished and Spotify stopped on it
+      if (S.running) startNext(true);        // it finished and Spotify stopped on it
       return;
     }
     S.foreign = null;
@@ -744,7 +775,7 @@ function evaluate(){
       const remaining = e.duration - p.progress;
       if (remaining < 25000) {
         const pid = e.playId;
-        endTimer = setTimeout(() => { if (S.now && S.now.playId === pid) startNext(); }, Math.max(0, remaining - 350));
+        endTimer = setTimeout(() => { if (S.now && S.now.playId === pid) startNext(true); }, Math.max(0, remaining - 350));
       }
     }
     return;
@@ -752,7 +783,7 @@ function evaluate(){
 
   // 3) Spotify is on something else (or nothing)
   if (st && Date.now() - st.sentAt < 6000) return;
-  if (ourSongEnded(e)) { if (S.running) startNext(); else { S.now = null; save(); renderAll(); } return; }
+  if (ourSongEnded(e)) { if (S.running) startNext(true); else { S.now = null; save(); renderAll(); } return; }
   const key = (p && p.uri) || 'nothing';
   if (S.dismissedForeign !== key) S.foreign = p && p.uri ? Object.assign({}, p) : { uri: null };
 }
@@ -1218,15 +1249,20 @@ async function openDiagnostics(){
       if (act === 'testplay') {
         const e = S.now || S.queue[0];
         if (!e || !S.device) { extra = 'Nothing to play (queue empty or no speaker).'; return draw(); }
-        extra = 'PLAY ' + e.name + ' …'; draw();
-        try {
-          await playOnDevice(e.uri, 0);
-          extra = `PLAY "${e.name}" → accepted (HTTP ${S.lastPlay ? S.lastPlay.status : '?'})`;
-        } catch(err){ extra = `PLAY "${e.name}" → ${err.status || ''} ${err.message}`; draw(); return; }
-        draw(); await sleep(3000);
-        try { const st = await api('GET', '/me/player'); extra += '\nSTATE after 3s: ' + (st ? `${st.is_playing ? 'PLAYING' : 'paused'} "${st.item ? st.item.name : '-'}" on ${st.device ? st.device.name : '?'}` : 'no active device'); }
-        catch(err){ extra += '\nSTATE error: ' + err.message; }
-        draw(); poll();
+        const lines = [];
+        for (const method of ['context', 'uris']) {
+          extra = lines.concat(`Trying "${method}" …`).join('\n'); draw();
+          let used;
+          try { used = await playOnDevice(e, 0, method); lines.push(`PLAY via ${used} → accepted (HTTP ${S.lastPlay ? S.lastPlay.status : '?'})`); }
+          catch(err){ lines.push(`PLAY via ${method} → ${err.status || ''} ${err.message}`); continue; }
+          await sleep(3500);
+          let playing = false;
+          try { const st = await api('GET', '/me/player'); playing = !!(st && st.is_playing && st.item);
+                lines.push(`  STATE: ${st ? `${st.is_playing ? 'PLAYING' : 'paused'} "${st.item ? st.item.name : '-'}" on ${st.device ? st.device.name : '?'}` : 'no active device'}`); }
+          catch(err){ lines.push('  STATE error: ' + err.message); }
+          if (playing) { LS.set('playMethod', used); lines.push(`✅ "${used}" works on your account — the app will use it.`); break; }
+        }
+        extra = lines.join('\n'); draw(); poll();
       }
     }
   });
@@ -1239,7 +1275,7 @@ async function openDiagnostics(){
       'Speaker: ' + (S.device ? `${S.device.name} [${S.device.type}]` : 'none'),
       'Last check: ' + (S.pollError ? 'ERROR ' + S.pollError : p ? `${p.uri ? (p.isPlaying ? 'playing' : 'paused') + ' "' + p.name + '"' : 'nothing loaded'} on ${p.deviceName || '(no active device)'} — ${Math.round((Date.now() - p.at) / 1000)}s ago` : 'none yet'),
       'On stage: ' + (S.now ? `${S.now.name} (${S.now.uri})${st && st.playId === S.now.playId ? ` started=${!!st.ok} attempts=${st.attempts}` : ''}${S.startFail ? ' FAILED' : ''}` : 'nothing'),
-      'Queue: ' + S.queue.length + ' · auto-play=' + S.running,
+      'Queue: ' + S.queue.length + ' · auto-play=' + S.running + ' · play method=' + preferredMethod(),
       extra,
       '— Recent Spotify calls (newest first) —',
       ...apiLog.slice().reverse().slice(0, 25).map(c => `${fmtClock(c.at)} ${c.method} ${c.path} → ${c.status}${c.note ? ' (' + c.note + ')' : ''}`)
@@ -1564,9 +1600,10 @@ document.addEventListener('click', async ev => {
     case 'f-retry':
       if (S.now) {
         S.startFail = null;
-        S.start = { playId: S.now.playId, sentAt: Date.now(), attempts: 2, pos: 0, nudged: false };
+        const m0 = otherMethod((S.start && S.start.method) || preferredMethod());
+        S.start = { playId: S.now.playId, sentAt: Date.now(), attempts: 1, pos: 0, nudged: false, method: m0 };
         renderBanner(); renderNow();
-        try { await playOnDevice(S.now.uri, 0); } catch(e){ S.startFail = { msg: explainPlayError(e) }; renderBanner(); }
+        try { S.start.method = await playOnDevice(S.now, 0, m0); } catch(e){ S.startFail = { msg: explainPlayError(e) }; renderBanner(); }
         schedulePoll(2000);
       }
       break;
