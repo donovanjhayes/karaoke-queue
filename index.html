@@ -261,6 +261,18 @@
   </div>
 </div>
 
+<!-- Reconnect (new permissions) -->
+<div id="scrReconnect" class="screen hidden">
+  <div class="card" style="text-align:center">
+    <div style="font-size:64px">🔑</div>
+    <h1>One quick step</h1>
+    <p>This version needs to reconnect to Spotify once, so it can ask for songs that are playable in your country. Your queue, PIN and speaker are kept.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
+      <button class="btn btn-primary btn-block" data-act="login">Reconnect Spotify</button>
+    </div>
+  </div>
+</div>
+
 <!-- Main app -->
 <div id="scrMain" class="hidden">
   <header class="top">
@@ -295,77 +307,100 @@
 
 <script>
 'use strict';
-/* =========================================================
-   Storage + state
-   ========================================================= */
+/* =====================================================================
+   Karaoke Queue v2.0
+   One shared iPad, one Spotify Premium account, music on another device.
+   The app owns the queue and hands Spotify one song at a time.
+   ===================================================================== */
+const VERSION = '2.0';
+
+/* ---------------- storage ---------------- */
 const LS = {
-  get(k, d){ try{ const v = localStorage.getItem('kq_'+k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
-  set(k, v){ try{ localStorage.setItem('kq_'+k, JSON.stringify(v)); }catch(e){} },
-  del(k){ try{ localStorage.removeItem('kq_'+k); }catch(e){} }
+  get(k, d){ try{ const v = localStorage.getItem('kq_' + k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem('kq_' + k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem('kq_' + k); }catch(e){} }
 };
-const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-modify-private playlist-modify-public playlist-read-private playlist-read-collaborative';
+// One-time cleanup of playback bookkeeping left behind by v1.x
+if (LS.get('schema', 1) < 2) { ['seen', 'apilog', 'pkce'].forEach(LS.del); LS.set('schema', 2); }
+
+/* ---------------- constants ---------------- */
+// user-read-private lets us ask Spotify for songs that are playable in YOUR country (market=from_token).
+// Without it Spotify can hand back versions that won't play ("Spotify can't play this right now").
+const REQUIRED_SCOPES = ['user-read-private', 'user-read-playback-state', 'user-modify-playback-state', 'user-read-currently-playing',
+  'playlist-read-private', 'playlist-read-collaborative', 'playlist-modify-private', 'playlist-modify-public'];
+const SCOPES = REQUIRED_SCOPES.join(' ');
 const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html$/, '');
-const UNLOCK_MS = 2 * 60 * 1000;
 const API = 'https://api.spotify.com/v1';
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';
+const UNLOCK_MS = 2 * 60 * 1000;
+const MARKET = 'from_token';
 
+/* ---------------- state ---------------- */
 const S = {
   clientId: LS.get('clientId', ''),
-  tokens:   LS.get('tokens', null),     // {access, refresh, expiresAt}
+  tokens:   LS.get('tokens', null),     // {access, refresh, expiresAt, scope}
   pin:      LS.get('pin', null),
   device:   LS.get('device', null),     // {id, name, type}
-  queue:    LS.get('queue', []),        // entries waiting
-  now:      LS.get('now', null),        // entry currently singing (+playId)
-  history:  LS.get('history', []),      // entries sung tonight (+playId, playedAt)
-  running:  LS.get('running', false),   // auto-advance on
+  queue:    LS.get('queue', []),
+  now:      LS.get('now', null),        // the song on stage (has playId)
+  history:  LS.get('history', []),
+  running:  LS.get('running', false),   // auto-advance is on
+  lastPos:  LS.get('lastPos', null),    // {playId, progress} — for "resume where it was"
   unlockedUntil: 0,
-  player: null,          // last poll snapshot
-  seen: LS.get('seen', null), // last time we saw OUR song: {playId, progress, at, playing}
-  playIssuedAt: 0,
-  foreign: null,
-  dismissedForeign: null,
+  player: null,        // latest snapshot from GET /me/player
+  seen: null,          // last time we saw OUR song on Spotify {playId, progress, at, playing}
+  start: null,         // song we just asked Spotify to start {playId, sentAt, attempts, pos, nudged}
+  startFail: null,     // set when Spotify won't start the song
+  foreign: null, dismissedForeign: null,
+  pollError: '',
+  lastPlay: null,      // {status, at} of the latest play request
   tab: 'queue',
   search: { q: '', items: [], total: 0, loading: false, error: '' }
 };
 function save(){
-  LS.set('queue', S.queue); LS.set('now', S.now); LS.set('history', S.history);
-  LS.set('running', S.running); LS.set('seen', S.seen);
+  LS.set('queue', S.queue); LS.set('now', S.now); LS.set('history', S.history); LS.set('running', S.running);
 }
 
-/* =========================================================
-   Utilities
-   ========================================================= */
+/* ---------------- small helpers ---------------- */
 const $ = s => document.querySelector(s);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function fmtDur(ms){ ms = Math.max(0, ms|0); const s = Math.round(ms/1000); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); }
-function fmtClock(t){ return new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
-function fmtWait(ms){ const m = Math.ceil(ms/60000); return m <= 0 ? 'now' : m < 60 ? `~${m} min` : `~${Math.floor(m/60)}h ${m%60}m`; }
+function fmtDur(ms){ ms = Math.max(0, ms|0); const s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function fmtClock(t){ return new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+function fmtWait(ms){ const m = Math.ceil(ms / 60000); return m <= 0 ? 'now' : m < 60 ? `~${m} min` : `~${Math.floor(m / 60)}h ${m % 60}m`; }
 function isWide(){ return window.matchMedia('(min-width: 900px)').matches; }
 let toastTimer;
 function toast(msg, kind){
   const t = $('#toast'); t.textContent = msg; t.className = 'show ' + (kind || '');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', kind === 'err' ? 5000 : 3000);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = '', kind === 'err' ? 5500 : 3000);
 }
-function artHtml(src, cls){ return src ? `<img class="${cls||'art'}" src="${esc(src)}" alt="" loading="lazy">` : `<div class="art-ph">🎵</div>`; }
+function artHtml(src){ return src ? `<img class="art" src="${esc(src)}" alt="" loading="lazy">` : `<div class="art-ph">🎵</div>`; }
+const DEVICE_ICONS = { Computer:'💻', Smartphone:'📱', Speaker:'🔊', TV:'📺', Tablet:'📱', CastVideo:'📺', CastAudio:'🔊', AVR:'🔊', Automobile:'🚗' };
 
-/* =========================================================
-   Spotify auth (PKCE, no server needed)
-   ========================================================= */
-function b64url(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function mapTrack(t){
+  const imgs = (t.album && t.album.images) || [];
+  const pick = imgs.slice().sort((a, b) => (a.width || 0) - (b.width || 0)).find(i => (i.width || 300) >= 120) || imgs[0];
+  return { uri: t.uri, id: t.id, name: t.name, artists: (t.artists || []).map(a => a.name).join(', '),
+           art: pick ? pick.url : '', duration: t.duration_ms || 0, explicit: !!t.explicit,
+           playable: t.is_playable !== false && !t.is_local };
+}
+
+/* =====================================================================
+   Spotify login (PKCE — no server needed)
+   ===================================================================== */
+function b64url(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function randStr(n){ const a = new Uint8Array(n); crypto.getRandomValues(a); return b64url(a).slice(0, n); }
 
 async function login(){
   const verifier = randStr(64);
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   const state = randStr(16);
-  LS.set('pkce', {verifier, state});
+  LS.set('pkce', { verifier, state });
   const p = new URLSearchParams({ client_id: S.clientId, response_type: 'code', redirect_uri: REDIRECT_URI,
     code_challenge_method: 'S256', code_challenge: challenge, scope: SCOPES, state });
   location.href = 'https://accounts.spotify.com/authorize?' + p;
 }
-
 async function handleCallback(){
   const p = new URLSearchParams(location.search);
   if (!p.has('code') && !p.has('error')) return;
@@ -374,25 +409,31 @@ async function handleCallback(){
   const pk = LS.get('pkce', null);
   if (!pk || pk.state !== p.get('state')) { toast('Login check failed — please try again.', 'err'); return; }
   try{
-    const r = await fetch(TOKEN_URL, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({ grant_type:'authorization_code', code:p.get('code'), redirect_uri:REDIRECT_URI, client_id:S.clientId, code_verifier:pk.verifier }) });
+    const r = await fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code: p.get('code'), redirect_uri: REDIRECT_URI, client_id: S.clientId, code_verifier: pk.verifier }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error_description || j.error || 'Token error');
     setTokens(j); LS.del('pkce');
   }catch(e){ toast('Login failed: ' + e.message, 'err'); }
 }
 function setTokens(j){
-  S.tokens = { access: j.access_token, refresh: j.refresh_token || (S.tokens && S.tokens.refresh), expiresAt: Date.now() + (j.expires_in - 60) * 1000,
-               scope: j.scope != null ? j.scope : (S.tokens && S.tokens.scope) };
+  S.tokens = { access: j.access_token, refresh: j.refresh_token || (S.tokens && S.tokens.refresh),
+               expiresAt: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope != null ? j.scope : (S.tokens && S.tokens.scope) };
   LS.set('tokens', S.tokens);
+}
+function missingScopes(){
+  if (!S.tokens) return REQUIRED_SCOPES;
+  if (S.tokens.scope == null) return ['(unknown — logged in with an older version)'];
+  const have = S.tokens.scope.split(' ');
+  return REQUIRED_SCOPES.filter(s => !have.includes(s));
 }
 let refreshing = null;
 function refreshToken(){
   if (refreshing) return refreshing;
   refreshing = (async () => {
     try{
-      const r = await fetch(TOKEN_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({ grant_type:'refresh_token', refresh_token:S.tokens.refresh, client_id:S.clientId }) });
+      const r = await fetch(TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: S.tokens.refresh, client_id: S.clientId }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         if (r.status === 400 || r.status === 401) { S.tokens = null; LS.del('tokens'); showScreen(); }
@@ -404,18 +445,21 @@ function refreshToken(){
   return refreshing;
 }
 
-const apiLog = LS.get('apilog', []), quotaUntil = {};   // recent calls, shown in Settings → Diagnostics
+/* =====================================================================
+   Spotify API wrapper (with a call log for Diagnostics)
+   ===================================================================== */
+const apiLog = [];
+const quotaUntil = {};   // Spotify limits groups of endpoints separately; pause only the one that hit its limit
 function logCall(method, path, status, note){
-  apiLog.push({ at: Date.now(), method, path: path.split('?')[0] + (path.includes('device_id') ? ' [device]' : ''), status, note: note || '' });
-  if (apiLog.length > 60) apiLog.shift();
-  LS.set('apilog', apiLog);
+  apiLog.push({ at: Date.now(), method, path: path.split('?')[0], status, note: note || '' });
+  if (apiLog.length > 80) apiLog.shift();
 }
 async function api(method, path, body, retry = true){
   if (!S.tokens) throw new Error('Not logged in to Spotify');
-  const qkey = method + ' ' + path.split('?')[0];   // Spotify limits per group of endpoints, so pause only this one
+  const qkey = method + ' ' + path.split('?')[0];
   if (quotaUntil[qkey] && Date.now() < quotaUntil[qkey]) {
-    const e = new Error('Spotify’s usage limit for this app was reached. It resets on its own — try again in a few minutes.'); e.status = 429; e.quota = true;
-    logCall(method, path, 'skipped', 'quota pause'); throw e;
+    const e = new Error('Spotify’s usage limit for this app was reached. It resets on its own — try again in a few minutes.');
+    e.status = 429; e.quota = true; throw e;
   }
   if (Date.now() > S.tokens.expiresAt) await refreshToken();
   const opts = { method, headers: { Authorization: 'Bearer ' + S.tokens.access } };
@@ -423,50 +467,67 @@ async function api(method, path, body, retry = true){
   let r;
   try { r = await fetch(API + path, opts); }
   catch(err){ logCall(method, path, 'network', err.message); throw new Error('Network problem reaching Spotify'); }
-  if (r.status === 401 && retry) { logCall(method, path, 401, 'refreshing token'); await refreshToken(); return api(method, path, body, false); }
+  if (r.status === 401 && retry) { logCall(method, path, 401, 'refreshing login'); await refreshToken(); return api(method, path, body, false); }
+  if (path.startsWith('/me/player/play')) S.lastPlay = { status: r.status, at: Date.now() };
   if (r.status === 429) {
-    const j429 = await r.json().catch(() => null);
-    const reason = j429 && (j429.reason || (j429.error && j429.error.reason));
+    const j = await r.json().catch(() => null);
+    const reason = j && (j.reason || (j.error && j.error.reason));
     logCall(method, path, 429, reason || 'rate limit');
     if (reason === 'QUOTA_EXCEEDED') {
       quotaUntil[qkey] = Date.now() + 5 * 60 * 1000;
       const e = new Error('Spotify’s usage limit for this app was reached. It resets on its own — try again in a few minutes.'); e.status = 429; e.quota = true; throw e;
     }
-    const ra = Math.min(+r.headers.get('Retry-After') || 5, 15);
-    if (retry) { await sleep(ra * 1000); return api(method, path, body, false); }
+    const wait = Math.min(+r.headers.get('Retry-After') || 5, 15);
+    if (retry) { await sleep(wait * 1000); return api(method, path, body, false); }
     const e = new Error('Spotify asked us to slow down — try again in a few seconds.'); e.status = 429; throw e;
   }
-  if (path.startsWith('/me/player/play')) S.lastPlay = { status: r.status, at: Date.now() };
   if (r.status === 204 || r.status === 202) { logCall(method, path, r.status); return null; }
   const text = await r.text(); let j = null; try { j = text ? JSON.parse(text) : null; } catch(e){}
   if (!r.ok) {
-    const msg = (j && j.error && (j.error.message || j.error)) || ('Spotify error ' + r.status);
-    logCall(method, path, r.status, typeof msg === 'string' ? msg : '');
-    const e = new Error(typeof msg === 'string' ? msg : 'Spotify error ' + r.status); e.status = r.status; e.reason = j && j.error && j.error.reason; throw e;
+    let msg = (j && j.error && (j.error.message || j.error)) || ('Spotify error ' + r.status);
+    if (typeof msg !== 'string') msg = 'Spotify error ' + r.status;
+    logCall(method, path, r.status, msg);
+    const e = new Error(msg); e.status = r.status; e.reason = j && j.error && j.error.reason; throw e;
   }
   logCall(method, path, r.status);
   return j;
 }
 
-function mapTrack(t){
-  const imgs = (t.album && t.album.images) || [];
-  const pick = imgs.slice().sort((a,b) => (a.width||0) - (b.width||0)).find(i => (i.width||300) >= 120) || imgs[0];
-  return { uri: t.uri, id: t.id, name: t.name, artists: (t.artists||[]).map(a => a.name).join(', '),
-           art: pick ? pick.url : '', duration: t.duration_ms || 0, explicit: !!t.explicit };
+/* =====================================================================
+   Modals, confirmations, host PIN
+   ===================================================================== */
+function openModal(html, { onClick, onClose, dismissable = true, wide = false } = {}){
+  const bd = document.createElement('div'); bd.className = 'backdrop';
+  bd.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog">${html}</div>`;
+  $('#modalRoot').appendChild(bd);
+  let closed = false;
+  const m = { el: bd.querySelector('.modal'), close(){ if (closed) return; closed = true; bd.remove(); onClose && onClose(); } };
+  bd.addEventListener('click', e => {
+    if (e.target === bd) { if (dismissable) m.close(); return; }
+    const el = e.target.closest('[data-act]');
+    if (el && onClick) { e.stopPropagation(); onClick(el.dataset.act, el, m); }
+  });
+  return m;
 }
+function confirmDialog({ title, body, buttons }){
+  return new Promise(res => {
+    let val = null;
+    const m = openModal(`<h2>${title}</h2>${body ? `<p>${body}</p>` : ''}
+      <div class="stack">${buttons.map((b, i) => `<button class="btn ${b.cls || 'btn-ghost'}" data-act="b" data-i="${i}">${b.label}</button>`).join('')}</div>`,
+      { onClick(act, el){ if (act === 'b') { val = buttons[+el.dataset.i].value; m.close(); } }, onClose: () => res(val) });
+  });
+}
+const yesNo = (yes, cls = 'btn-danger-solid') => [{ label: yes, value: true, cls }, { label: 'Cancel', value: null }];
 
-/* =========================================================
-   Host PIN
-   ========================================================= */
 function isUnlocked(){ return Date.now() < S.unlockedUntil; }
 function requirePin(reason){
   return new Promise(res => {
     if (isUnlocked()) { S.unlockedUntil = Date.now() + UNLOCK_MS; renderLock(); return res(true); }
-    openPinPad({ title: '🔒 Host PIN', sub: reason ? `Needed to ${reason}.` : '', onDone: ok => res(ok) });
+    openPinPad({ title: '🔒 Host PIN', sub: reason ? `Needed to ${reason}.` : '', onDone: res });
   });
 }
 function openPinPad({ title, sub, onDone, setMode }){
-  let entered = '', first = null;
+  let entered = '', first = null, done = false;
   const m = openModal(`
     <h2 style="text-align:center">${esc(title)}</h2>
     <p style="text-align:center" id="pinSub">${esc(sub || '')}</p>
@@ -478,8 +539,7 @@ function openPinPad({ title, sub, onDone, setMode }){
       <button data-act="d" data-v="0">0</button>
       <button data-act="back">⌫</button>
     </div>
-    ${setMode ? '<div class="stack"><button class="btn btn-primary" data-act="ok">Next</button></div>' : ''}
-  `, {
+    ${setMode ? '<div class="stack"><button class="btn btn-primary" data-act="ok">Next</button></div>' : ''}`, {
     dismissable: !setMode,
     onClose: () => { if (!done) onDone(false); },
     onClick(act, el){
@@ -489,11 +549,10 @@ function openPinPad({ title, sub, onDone, setMode }){
       if (act === 'ok') setStep();
     }
   });
-  let done = false;
   const dots = m.el.querySelector('#pinDots'), err = m.el.querySelector('#pinErr');
   function draw(){
     const n = setMode ? Math.max(4, entered.length) : S.pin.length;
-    dots.innerHTML = Array.from({length: n}, (_, i) => `<i class="${i < entered.length ? 'f' : ''}"></i>`).join('');
+    dots.innerHTML = Array.from({ length: n }, (_, i) => `<i class="${i < entered.length ? 'f' : ''}"></i>`).join('');
   }
   function fail(msg){ err.textContent = msg; dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake'); entered = ''; setTimeout(draw, 250); }
   function check(){
@@ -509,100 +568,21 @@ function openPinPad({ title, sub, onDone, setMode }){
   draw();
 }
 
-/* =========================================================
-   Modals
-   ========================================================= */
-function openModal(html, { onClick, onClose, dismissable = true, wide = false } = {}){
-  const bd = document.createElement('div'); bd.className = 'backdrop';
-  bd.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog">${html}</div>`;
-  $('#modalRoot').appendChild(bd);
-  let closed = false;
-  const api_ = { el: bd.querySelector('.modal'), close(){ if (closed) return; closed = true; bd.remove(); onClose && onClose(); } };
-  bd.addEventListener('click', e => {
-    if (e.target === bd) { if (dismissable) api_.close(); return; }
-    const el = e.target.closest('[data-act]');
-    if (el && onClick) { e.stopPropagation(); onClick(el.dataset.act, el, api_); }
-  });
-  return api_;
-}
-function confirmDialog({ title, body, buttons }){
-  // buttons: [{label, value, cls}]
-  return new Promise(res => {
-    let val = null;
-    const m = openModal(`<h2>${title}</h2>${body ? `<p>${body}</p>` : ''}
-      <div class="stack">${buttons.map((b, i) => `<button class="btn ${b.cls || 'btn-ghost'}" data-act="b" data-i="${i}">${b.label}</button>`).join('')}</div>`,
-      { onClick(act, el){ if (act === 'b') { val = buttons[+el.dataset.i].value; m.close(); } }, onClose: () => res(val) });
-  });
+/* =====================================================================
+   Playback engine
+   - To play a song: ONE request — "play this track on that device".
+     No device transfers, no auto-play tricks (those confused Spotify).
+   - Poll Spotify gently to see what's playing; start the next song
+     just before the current one ends.
+   ===================================================================== */
+let endTimer = null, pollTimer = null, polling = false, advancing = false, repeatOffFor = null;
+
+function sameTrack(p, e){
+  return !!(p && e && p.uri && (p.uri === e.uri || (p.name === e.name && Math.abs((p.duration || 0) - e.duration) < 3000)));
 }
 
-/* =========================================================
-   Queue logic
-   ========================================================= */
-function currentRemaining(){
-  if (!S.now) return 0;
-  const p = S.player;
-  if (p && sameTrack(p, S.now)) {
-    const prog = p.progress + (p.isPlaying ? Date.now() - p.at : 0);
-    return Math.max(0, S.now.duration - prog);
-  }
-  return S.now.duration;
-}
-function waitBefore(i){ let ms = currentRemaining(); for (let k = 0; k < i && k < S.queue.length; k++) ms += S.queue[k].duration; return ms; }
-
-function duplicateInfo(uri){
-  const out = [];
-  if (S.now && S.now.uri === uri) out.push('It’s playing right now.');
-  const qi = S.queue.findIndex(e => e.uri === uri);
-  if (qi >= 0 && S.queue[qi].hidden) out.push('Someone already picked this as a secret song 🤫');
-  else if (qi >= 0) out.push(`It’s already in the queue (#${qi + 1}${S.queue[qi].label ? ', ' + esc(S.queue[qi].label) : ''}).`);
-  const h = S.history.filter(e => e.uri === uri && !(S.now && e.playId === S.now.playId));
-  if (h.length) out.push(`It was already sung tonight at ${fmtClock(h[h.length - 1].playedAt)}${h[h.length-1].label ? ' by ' + esc(h[h.length-1].label) : ''}.`);
-  return out;
-}
-
-function addToQueue(entry, where){
-  if (where === 'next') S.queue.unshift(entry); else S.queue.push(entry);
-  save(); renderAll();
-  const pos = where === 'next' ? 1 : S.queue.length;
-  if (S.running && !S.now) { startNext(); toast('Added — starting now! 🎤', 'ok'); return; }
-  toast(`Added — #${pos} in line${S.now ? ', starts ' + fmtWait(waitBefore(pos - 1)) : ''}`, 'ok');
-}
-
-let advancing = false, endTimer = null, repeatOffFor = null;
-async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
-  if (!(positionMs > 0 && positionMs < entry.duration - 5000)) positionMs = 0;
-  if (!S.device) { openDevicePicker('Pick the speaker first, then try again.'); throw new Error('no device'); }
-  try{
-    await sendPlay(entry, positionMs, 'normal');
-  }catch(e){
-    if (e.status === 404) { toast(`Can’t reach "${S.device.name}". Open Spotify on it and pick it again.`, 'err'); openDevicePicker(); }
-    else if (e.status === 403 && /scope/i.test(e.message)) toast('Spotify permissions are missing — open ⚙︎ Settings → Log out, then Connect Spotify again.', 'err');
-    else if (e.status === 403) toast('Spotify refused playback: ' + e.message, 'err');
-    else if (e.message !== 'no device') toast('Couldn’t start the song: ' + e.message, 'err');
-    throw e;
-  }
-  if (resume && S.now && S.now.playId) {
-    S.now = Object.assign({}, entry, { playId: S.now.playId, startedAt: S.now.startedAt });
-  } else {
-    const playId = uid();
-    S.now = Object.assign({}, entry, { playId, startedAt: Date.now() });
-    S.history.push(Object.assign({}, entry, { playId, playedAt: Date.now() }));
-  }
-  S.running = true;
-  S.playIssuedAt = Date.now();
-  // not "confirmed" until a poll actually shows Spotify playing this song
-  S.seen = { playId: S.now.playId, progress: positionMs, at: Date.now(), playing: false, confirmed: false, retries: 0, startPos: positionMs };
-  S.foreign = null; S.dismissedForeign = null; S.stuck = false; S.stuckReason = '';
-  save(); renderAll(); keepAwake();
-  if (repeatOffFor !== S.device.id) {   // make sure Spotify doesn't loop the song forever
-    repeatOffFor = S.device.id;
-    api('PUT', '/me/player/repeat?state=off&device_id=' + encodeURIComponent(S.device.id)).catch(() => { repeatOffFor = null; });
-  }
-  schedulePoll(1500);
-}
-
-// Device IDs can change (e.g. after reconnecting Spotify), so re-find ours by name.
-// Returns the device, null if it's not in Spotify's list, or undefined if we couldn't check.
+// Device IDs can change (e.g. after logging in again). Re-find ours by name.
+// Returns the device, null if Spotify doesn't list it, or undefined if we couldn't check.
 async function resolveDevice(){
   try{
     const j = await api('GET', '/me/player/devices');
@@ -613,39 +593,49 @@ async function resolveDevice(){
   }catch(e){ return undefined; }
 }
 
-let deviceChecked = false;
-// mode: 'normal' (first try), 'replay' (send the song again), 'wake' (re-check device, transfer + play)
-async function sendPlay(entry, positionMs, mode = 'normal'){
-  if (!deviceChecked || mode === 'wake') {
+async function playOnDevice(uri, positionMs){
+  if (!S.device) { const e = new Error('no device'); e.noDevice = true; throw e; }
+  const send = () => api('PUT', '/me/player/play?device_id=' + encodeURIComponent(S.device.id), { uris: [uri], position_ms: Math.max(0, positionMs | 0) });
+  try { await send(); }
+  catch(e){
+    if (e.status !== 404) throw e;
     const d = await resolveDevice();
-    if (d !== undefined) deviceChecked = true;
-    if (d === null) { const e = new Error(`"${S.device.name}" isn’t in your Spotify devices right now`); e.status = 404; e.missing = true; throw e; }
+    if (!d) { e.missing = true; throw e; }
+    await send();
   }
-  const devId = S.device.id;
-  // Normally just "play this song on that device" — that's all Spotify needs.
-  // Only on the last retry, and only if the speaker isn't the active one, hand playback over first
-  // (without auto-playing, which can leave Spotify stuck in an empty "playing" state).
-  const active = S.player && S.player.deviceId === devId;
-  if (mode === 'wake' && !active) {
-    try {
-      await api('PUT', '/me/player', { device_ids: [devId], play: false });
-      await sleep(1500);
-    } catch(e){ if (e.status === 404) throw e; }
+  if (repeatOffFor !== S.device.id) {   // a single song on repeat would never "end"
+    repeatOffFor = S.device.id;
+    api('PUT', '/me/player/repeat?state=off&device_id=' + encodeURIComponent(S.device.id)).catch(() => { repeatOffFor = null; });
   }
-  await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(devId), { uris: [entry.uri], position_ms: Math.max(0, positionMs|0) });
 }
 
-let retrying = false;
-async function retryStart(){
-  const e = S.now; if (!e || !S.seen || retrying) return;
-  retrying = true;
-  S.seen.retries = (S.seen.retries || 0) + 1;
-  S.seen.nudged = false;
-  try { await sendPlay(e, S.seen.startPos || 0, S.seen.retries >= 2 ? 'wake' : 'replay'); S.stuckReason = ''; }
-  catch(err){ S.stuckReason = err.missing ? 'missing' : (err.message || ''); }
-  finally { retrying = false; }
-  S.playIssuedAt = Date.now();
-  schedulePoll(1500);
+function explainPlayError(e){
+  if (e.noDevice) return 'Pick the speaker first.';
+  if (e.missing || e.status === 404) return `Can’t find "${S.device ? S.device.name : 'the speaker'}". Open Spotify on it, play any song for a second, then pick it again.`;
+  if (e.status === 403 && /scope/i.test(e.message)) return 'Spotify permissions are missing — go to ⚙︎ Settings → Log out, then Connect Spotify again.';
+  if (e.status === 403) return 'Spotify refused: ' + e.message + ' (Premium is required, and some devices don’t allow remote control.)';
+  return 'Couldn’t start the song: ' + e.message;
+}
+
+async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
+  if (!S.device) { openDevicePicker('Pick the speaker first, then try again.'); const e = new Error('no device'); e.noDevice = true; throw e; }
+  if (!(positionMs > 0 && positionMs < entry.duration - 5000)) positionMs = 0;
+  try { await playOnDevice(entry.uri, positionMs); }
+  catch(e){
+    toast(explainPlayError(e), 'err');
+    if (e.missing || e.noDevice) openDevicePicker();
+    throw e;
+  }
+  const keep = resume && S.now && S.now.playId;
+  const playId = keep ? S.now.playId : uid();
+  if (!keep) S.history.push(Object.assign({}, entry, { playId, playedAt: Date.now() }));
+  S.now = Object.assign({}, entry, { playId, startedAt: keep ? S.now.startedAt : Date.now() });
+  S.running = true;
+  S.seen = null;
+  S.start = { playId, sentAt: Date.now(), attempts: 1, pos: positionMs, nudged: false };
+  S.startFail = null; S.foreign = null; S.dismissedForeign = null;
+  save(); renderAll(); keepAwake();
+  schedulePoll(2000);
 }
 
 async function startNext(){
@@ -653,92 +643,64 @@ async function startNext(){
   advancing = true; clearTimeout(endTimer);
   try{
     const next = S.queue[0];
-    if (!next) {
-      S.now = null; S.seen = null; save(); renderAll();
-      return;
-    }
+    if (!next) { S.now = null; S.seen = null; S.start = null; S.startFail = null; save(); renderAll(); return; }
     S.queue.shift(); save();
     try { await playEntry(next); }
-    catch(e){ S.queue.unshift(next); S.now = null; S.seen = null; save(); renderAll(); }
+    catch(e){ S.queue.unshift(next); S.now = null; S.start = null; save(); renderAll(); }
   } finally { advancing = false; }
 }
 
 function stripPlay(e){ const c = Object.assign({}, e); delete c.playId; delete c.startedAt; delete c.playedAt; return c; }
 
-async function playNowFlow(entry){
-  if (!(await requirePin('play a song immediately'))) return false;
-  if (S.now) {
-    const cur = S.now;
-    const curName = cur.label ? `${esc(cur.label)} — ${esc(cur.name)}` : esc(cur.name);
-    const choice = await confirmDialog({
-      title: '⚠️ Stop the current song?',
-      body: `<b style="color:var(--text)">${curName}</b> is playing. What should happen to it?`,
-      buttons: [
-        { label: '▶ Play now — put current song back next in line', value: 'bump', cls: 'btn-danger' },
-        { label: '▶ Play now — drop the current song', value: 'drop', cls: 'btn-danger' },
-        { label: 'Cancel', value: null, cls: 'btn-ghost' }
-      ]
-    });
-    if (!choice) return false;
-    if (choice === 'bump') {
-      S.history = S.history.filter(h => h.playId !== cur.playId);
-      S.queue.unshift(stripPlay(cur));
-    }
-  } else {
-    const ok = await confirmDialog({ title: 'Play this now?', body: 'It will start playing immediately.',
-      buttons: [{ label: '▶ Play now', value: true, cls: 'btn-danger-solid' }, { label: 'Cancel', value: null }] });
-    if (!ok) return false;
-  }
-  clearTimeout(endTimer);
-  try { await playEntry(entry); return true; }
-  catch(e){ save(); renderAll(); return false; }
+// Song won't start → drop it (it was never sung) and move on
+function skipFailedSong(){
+  if (S.now) S.history = S.history.filter(h => h.playId !== S.now.playId);
+  S.startFail = null; S.start = null; S.now = null; save();
+  if (S.queue.length) startNext(); else renderAll();
 }
 
-/* =========================================================
-   Playback watcher
-   ========================================================= */
-let pollTimer = null;
+/* ---------------- watching Spotify ---------------- */
 function schedulePoll(ms){ clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
-function sameTrack(p, e){ return !!(p && e && p.uri && (p.uri === e.uri || (p.name === e.name && Math.abs((p.duration||0) - e.duration) < 3000))); }
 
 async function poll(){
-  if (!S.tokens) return;
-  let st;
-  try { st = await api('GET', '/me/player'); S.pollError = ''; }
-  catch(e){
-    S.pollError = e.message; renderForeign();
-    schedulePoll(e.quota ? 60000 : e.status === 429 ? 15000 : 8000); return;
-  }
-  const item = st && st.item;
-  S.player = item
-    ? { uri: item.uri, name: item.name, artists: (item.artists||[]).map(a => a.name).join(', '), progress: st.progress_ms || 0,
-        duration: item.duration_ms || 0, isPlaying: !!st.is_playing, at: Date.now(), deviceName: st.device && st.device.name, deviceId: st.device && st.device.id }
-    : { uri: null, isPlaying: false, progress: 0, duration: 0, at: Date.now(), deviceId: st && st.device && st.device.id, deviceName: st && st.device && st.device.name };
-  evaluate();
-  renderNow(); renderForeign();
-  schedulePoll(nextPollDelay());
+  clearTimeout(pollTimer);
+  if (!S.tokens || polling) return;
+  polling = true;
+  try{
+    let st;
+    try { st = await api('GET', '/me/player'); S.pollError = ''; }
+    catch(e){
+      S.pollError = e.message; renderBanner();
+      schedulePoll(e.quota ? 60000 : e.status === 429 ? 15000 : 8000);
+      return;
+    }
+    const item = st && st.item, dev = st && st.device;
+    S.player = {
+      uri: item ? item.uri : null, name: item ? item.name : '', artists: item ? (item.artists || []).map(a => a.name).join(', ') : '',
+      duration: item ? item.duration_ms || 0 : 0, progress: (st && st.progress_ms) || 0, isPlaying: !!(st && st.is_playing && item),
+      at: Date.now(), deviceId: dev ? dev.id : null, deviceName: dev ? dev.name : null
+    };
+    try { evaluate(); } catch(err){ console.error(err); }
+    renderNow(); renderBanner();
+    schedulePoll(nextPollDelay());
+  } finally { polling = false; }
 }
 
-// Poll only as often as needed — Spotify limits how many calls an app can make.
+// Ask Spotify only as often as needed — it limits how many calls an app may make.
 function nextPollDelay(){
-  const d = basePollDelay();
-  const playingOurs = S.now && S.player && sameTrack(S.player, S.now) && S.player.isPlaying;
-  return document.visibilityState === 'hidden' && !playingOurs ? Math.max(d, 60000) : d;
-}
-function basePollDelay(){
   const e = S.now, p = S.player;
-  if (!e) return S.running ? 20000 : 60000;
-  if (S.seen && S.seen.playId === e.playId && !S.seen.confirmed) return S.stuck ? 15000 : 2000;
-  if (p && sameTrack(p, e) && p.isPlaying) {
-    const remaining = e.duration - p.progress;
-    return Math.max(1500, Math.min(15000, remaining - 5000));   // check in again ~5s before the end
-  }
-  return 8000;
+  let d;
+  if (!e) d = S.running ? 20000 : 45000;
+  else if (S.start && S.start.playId === e.playId && !S.start.ok) d = S.startFail ? 10000 : 2000;
+  else if (sameTrack(p, e) && p.isPlaying) d = Math.max(1500, Math.min(10000, e.duration - p.progress - 5000));
+  else d = 8000;
+  const playingOurs = e && sameTrack(p, e) && p.isPlaying;
+  return document.visibilityState === 'hidden' && !playingOurs ? Math.max(d, 60000) : d;
 }
 
 function ourSongEnded(e){
   const sn = S.seen;
-  if (!sn || sn.playId !== e.playId || !sn.confirmed) return false;
+  if (!sn || sn.playId !== e.playId) return false;
   const est = sn.progress + (sn.playing ? Date.now() - sn.at : 0);
   return est >= e.duration - 4000 || sn.progress >= e.duration - 12000;
 }
@@ -746,36 +708,38 @@ function ourSongEnded(e){
 function evaluate(){
   const e = S.now, p = S.player;
   clearTimeout(endTimer);
-  if (!e) { S.foreign = null; S.stuck = false; return; }
-  const sinceCmd = Date.now() - S.playIssuedAt;
-  const grace = sinceCmd < 8000;
-  const sn = S.seen && S.seen.playId === e.playId ? S.seen : null;
+  if (!e) { S.foreign = null; S.startFail = null; return; }
+  const ours = sameTrack(p, e);
+  const st = S.start && S.start.playId === e.playId ? S.start : null;
 
-  // ---- Waiting for the song to actually start on the speaker ----
-  if (sn && !sn.confirmed) {
-    const loaded = sameTrack(p, e);
-    if (loaded && p.isPlaying) {
-      sn.confirmed = true; S.stuck = false;           // it started — fall through to normal handling
-    } else {
-      if (loaded && !sn.nudged && sinceCmd > 2500) {
-        // the song is loaded on the speaker but paused — just press play, don't re-send
-        sn.nudged = true; S.playIssuedAt = Date.now();
+  // 1) We just asked Spotify to start this song — wait until it really plays.
+  if (st && !st.ok) {
+    if (ours && p.isPlaying) { st.ok = true; S.startFail = null; }
+    else {
+      const age = Date.now() - st.sentAt;
+      if (ours && !st.nudged && age > 3000) {
+        // Loaded but paused: just press play, don't re-send the song
+        st.nudged = true;
         api('PUT', '/me/player/play?device_id=' + encodeURIComponent(S.device.id)).catch(() => {});
-      } else if (sinceCmd > 7000 && !retrying) {
-        if ((sn.retries || 0) < 2) retryStart(); else S.stuck = true;
+      } else if (age > 9000) {
+        if (st.attempts < 2) {
+          st.attempts++; st.sentAt = Date.now(); st.nudged = false;
+          playOnDevice(e.uri, st.pos).catch(err => { S.startFail = { msg: explainPlayError(err) }; renderBanner(); });
+        } else if (!S.startFail) S.startFail = { msg: '' };
       }
       return;
     }
   }
 
-  if (sameTrack(p, e)) {
-    // Spotify finished the track and stopped on it (progress reset to 0)
-    if (!p.isPlaying && !grace && p.progress < 3000 && sn && sn.confirmed && sn.progress > e.duration - 12000) {
-      if (S.running) startNext(); return;
+  // 2) Spotify is on our song
+  if (ours) {
+    if (!p.isPlaying && p.progress < 3000 && S.seen && S.seen.playId === e.playId && S.seen.progress > e.duration - 12000) {
+      if (S.running) startNext();            // it finished and Spotify stopped on it
+      return;
     }
-    S.foreign = null; S.stuck = false;
-    S.seen = { playId: e.playId, progress: p.progress, at: p.at, playing: p.isPlaying, confirmed: true, retries: 0, startPos: 0 };
-    LS.set('seen', S.seen);
+    S.foreign = null;
+    S.seen = { playId: e.playId, progress: p.progress, at: p.at, playing: p.isPlaying };
+    LS.set('lastPos', { playId: e.playId, progress: p.progress });
     if (p.isPlaying && S.running) {
       const remaining = e.duration - p.progress;
       if (remaining < 25000) {
@@ -785,17 +749,21 @@ function evaluate(){
     }
     return;
   }
-  if (grace) return;
 
-  // Something else (or nothing) is playing
+  // 3) Spotify is on something else (or nothing)
+  if (st && Date.now() - st.sentAt < 6000) return;
   if (ourSongEnded(e)) { if (S.running) startNext(); else { S.now = null; save(); renderAll(); } return; }
   const key = (p && p.uri) || 'nothing';
-  if (S.dismissedForeign !== key) S.foreign = p && p.uri ? p : { uri: null };
+  if (S.dismissedForeign !== key) S.foreign = p && p.uri ? Object.assign({}, p) : { uri: null };
 }
 
-/* =========================================================
-   Wake lock (keeps iPad screen on while the party runs)
-   ========================================================= */
+function resumePosition(){
+  const lp = LS.get('lastPos', null);
+  if (S.seen && S.now && S.seen.playId === S.now.playId) return S.seen.progress;
+  return lp && S.now && lp.playId === S.now.playId ? lp.progress : 0;
+}
+
+/* ---------------- keep the iPad awake ---------------- */
 let wakeLock = null;
 async function keepAwake(){
   try{
@@ -806,37 +774,41 @@ async function keepAwake(){
   }catch(e){}
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { if (S.running) keepAwake(); if (S.tokens && S.clientId) poll(); }
+  if (document.visibilityState === 'visible') { if (S.running) keepAwake(); if (S.tokens && S.clientId && !missingScopes().length) poll(); }
 });
 
-/* =========================================================
+/* =====================================================================
    Rendering
-   ========================================================= */
+   ===================================================================== */
 function showScreen(){
-  ['#scrSetup','#scrLogin','#scrMain'].forEach(s => $(s).classList.add('hidden'));
+  ['#scrSetup', '#scrLogin', '#scrReconnect', '#scrMain'].forEach(s => $(s).classList.add('hidden'));
   if (!S.clientId) { $('#redirectUri').textContent = REDIRECT_URI; $('#scrSetup').classList.remove('hidden'); return; }
   if (!S.tokens) { $('#scrLogin').classList.remove('hidden'); return; }
+  if (missingScopes().length) { $('#scrReconnect').classList.remove('hidden'); return; }
   $('#scrMain').classList.remove('hidden');
   renderAll();
   if (!S.pin) {
-    openPinPad({ title: 'Create a host PIN', sub: 'Guests can search and add to the end of the queue. This PIN unlocks Play next, Play now, reordering, removing and skipping.',
-      setMode: true, onDone: () => { renderLock(); if (!S.device) openDevicePicker(); } });
+    openPinPad({ title: 'Create a host PIN', setMode: true, onDone: () => { renderLock(); if (!S.device) openDevicePicker(); },
+      sub: 'Guests can search and add to the end of the queue. This PIN unlocks Play next, Play now, reordering, removing, skipping and settings.' });
   } else if (!S.device) openDevicePicker();
   poll();
 }
 
-function renderAll(){ renderLock(); renderDevice(); renderNow(); renderTabs(); renderQueue(); renderHistory(); renderResults(); renderForeign(); }
+function renderAll(){ renderLock(); renderDevice(); renderNow(); renderTabs(); renderQueue(); renderHistory(); renderResults(); renderBanner(); }
 
 function renderLock(){
   const c = $('#lockChip'); if (!c) return;
   if (isUnlocked()) {
     const s = Math.ceil((S.unlockedUntil - Date.now()) / 1000);
-    c.textContent = `🔓 Host ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; c.classList.add('unlocked');
+    c.textContent = `🔓 Host ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; c.classList.add('unlocked');
   } else { c.textContent = '🔒 Host'; c.classList.remove('unlocked'); }
 }
-function renderDevice(){
-  const icons = { Computer:'💻', Smartphone:'📱', Speaker:'🔊', TV:'📺', Tablet:'📱', CastVideo:'📺', CastAudio:'🔊', AVR:'🔊', Automobile:'🚗' };
-  $('#deviceChip').textContent = S.device ? `${icons[S.device.type] || '🔈'} ${S.device.name}` : '🔈 Pick speaker';
+function renderDevice(){ $('#deviceChip').textContent = S.device ? `${DEVICE_ICONS[S.device.type] || '🔈'} ${S.device.name}` : '🔈 Pick speaker'; }
+
+function nowProgress(){
+  const e = S.now, p = S.player;
+  if (!e || !sameTrack(p, e)) return 0;
+  return Math.min(e.duration, p.progress + (p.isPlaying ? Date.now() - p.at : 0));
 }
 
 function renderNow(){
@@ -856,20 +828,22 @@ function renderNow(){
     }
     return;
   }
-  const p = S.player, ours = sameTrack(p, e);
-  const prog = ours ? Math.min(e.duration, p.progress + (p.isPlaying ? Date.now() - p.at : 0)) : 0;
-  const playing = ours && p.isPlaying;
+  const p = S.player, ours = sameTrack(p, e), playing = ours && p.isPlaying;
+  const starting = S.start && S.start.playId === e.playId && !S.start.ok;
+  const prog = nowProgress();
+  const kicker = starting ? (S.startFail ? 'Couldn’t start' : `Starting on ${esc(S.device ? S.device.name : 'speaker')}…`)
+               : playing ? 'Now singing' : ours ? 'Paused' : 'On stage';
   el.innerHTML = `
     <div class="now-row">
       ${e.art ? `<img class="now-art" src="${esc(e.art)}" alt="">` : `<div class="now-art ph">🎤</div>`}
       <div class="now-main">
-        <div class="now-kicker">${S.seen && S.seen.playId === e.playId && !S.seen.confirmed ? (S.stuck ? 'Speaker not responding' : 'Starting on ' + esc(S.device ? S.device.name : 'speaker') + '…') : playing ? 'Now singing' : ours ? 'Paused' : 'On stage'}</div>
+        <div class="now-kicker">${kicker}</div>
         <div class="now-label">${esc(e.label || e.name)}</div>
         <div class="now-song">${e.label ? esc(e.name) + ' · ' : ''}${esc(e.artists)}</div>
       </div>
     </div>
     <div class="bar"><i id="nowBar" style="width:${e.duration ? (prog / e.duration * 100).toFixed(1) : 0}%"></i></div>
-    <div class="times"><span id="nowPos">${fmtDur(prog)}</span><span>-${fmtDur(e.duration - prog)}</span></div>
+    <div class="times"><span id="nowPos">${fmtDur(prog)}</span><span id="nowLeft">-${fmtDur(e.duration - prog)}</span></div>
     <div class="now-ctrls">
       <button class="btn btn-ghost" data-act="${playing ? 'pause' : 'resume'}">${playing ? '⏸ Pause' : '▶ Resume'}</button>
       <button class="btn btn-ghost" data-act="skip">⏭ Skip ${isUnlocked() ? '' : '🔒'}</button>
@@ -877,8 +851,7 @@ function renderNow(){
 }
 
 function renderTabs(){
-  const wide = isWide();
-  if (wide && S.tab === 'search') S.tab = 'queue';
+  if (isWide() && S.tab === 'search') S.tab = 'queue';
   document.body.dataset.tab = S.tab;
   $('#tabs').innerHTML = `
     <button class="tab tab-search ${S.tab === 'search' ? 'active' : ''}" data-act="tab" data-tab="search">🔍 Search</button>
@@ -886,10 +859,14 @@ function renderTabs(){
     <button class="tab ${S.tab === 'history' ? 'active' : ''}" data-act="tab" data-tab="history">Tonight<span class="count">${S.history.length}</span></button>`;
 }
 
+function currentRemaining(){ return S.now ? Math.max(0, S.now.duration - nowProgress()) : 0; }
+function waitBefore(i){ let ms = currentRemaining(); for (let k = 0; k < i && k < S.queue.length; k++) ms += S.queue[k].duration; return ms; }
+
 function renderQueue(){
   const el = $('#tabQueue');
   if (!S.queue.length) {
-    el.innerHTML = `<div class="empty"><div class="big">📝</div>Nobody's in line yet.<br>Search for a song and tap it to add it.<br><br><button class="btn btn-ghost" data-act="import">📥 Import a playlist or CSV ${isUnlocked() ? '' : '🔒'}</button></div>`;
+    el.innerHTML = `<div class="empty"><div class="big">📝</div>Nobody's in line yet.<br>Search for a song and tap it to add it.<br><br>
+      <button class="btn btn-ghost" data-act="import">📥 Import a playlist or CSV ${isUnlocked() ? '' : '🔒'}</button></div>`;
     return;
   }
   const lock = isUnlocked() ? '' : ' 🔒';
@@ -899,10 +876,10 @@ function renderQueue(){
     const titleLine = e.hidden ? `<span class="secret">🤫 Secret song</span>` : `${esc(e.name)} · ${esc(e.artists)}`;
     const main = e.label
       ? `<div class="t1">${esc(e.label)}</div><div class="t2">${titleLine}</div>`
-      : (e.hidden ? `<div class="t1 secret">🤫 Secret song</div><div class="t2">${fmtDur(e.duration)}</div>` : `<div class="t1">${esc(e.name)}</div><div class="t2">${esc(e.artists)}</div>`);
-    const art = e.hidden ? `<div class="art-ph">🤫</div>` : artHtml(e.art);
+      : e.hidden ? `<div class="t1 secret">🤫 Secret song</div><div class="t2">${fmtDur(e.duration)}</div>`
+      : `<div class="t1">${esc(e.name)}</div><div class="t2">${esc(e.artists)}</div>`;
     return `<li class="q-item ${i === 0 ? 'next' : ''}">
-      <div class="q-pos">${i + 1}</div>${art}
+      <div class="q-pos">${i + 1}</div>${e.hidden ? '<div class="art-ph">🤫</div>' : artHtml(e.art)}
       <div class="r-main">${main}</div>
       <div class="q-wait">${i === 0 && S.now ? 'Up next' : i === 0 ? 'First' : fmtWait(wait)}<small>${S.now || i > 0 ? '≈ ' + fmtClock(Date.now() + wait) : ''}</small></div>
       <div class="q-actions">
@@ -938,119 +915,123 @@ function renderResults(){
     el.innerHTML = `<div class="empty"><div class="big">🎶</div>Search for a song, then tap it.<br>It goes to the <b style="color:var(--text)">end of the queue</b> by default.</div>`;
     return;
   }
-  if (!sr.items.length) {
-    el.innerHTML = `<div class="empty">${sr.loading ? 'Searching…' : sr.error ? esc(sr.error) : 'No songs found.'}</div>`;
-    return;
-  }
+  if (!sr.items.length) { el.innerHTML = `<div class="empty">${sr.loading ? 'Searching…' : sr.error ? esc(sr.error) : 'No songs found.'}</div>`; return; }
   const qset = new Set(S.queue.filter(e => !e.hidden).map(e => e.uri)); if (S.now) qset.add(S.now.uri);
   const hset = new Set(S.history.map(e => e.uri));
   el.innerHTML = sr.items.map((t, i) => `
-    <button class="r-item" data-act="pick" data-i="${i}">
+    <button class="r-item" data-act="pick" data-i="${i}" style="${t.playable ? '' : 'opacity:.45'}">
       ${artHtml(t.art)}
       <div class="r-main">
-        <div class="t1">${esc(t.name)}${t.explicit ? '<span class="badge badge-e">E</span>' : ''}${qset.has(t.uri) ? '<span class="badge badge-q">IN QUEUE</span>' : hset.has(t.uri) ? '<span class="badge badge-h">SUNG</span>' : ''}</div>
+        <div class="t1">${esc(t.name)}${t.explicit ? '<span class="badge badge-e">E</span>' : ''}${!t.playable ? '<span class="badge badge-e">NOT AVAILABLE</span>' : qset.has(t.uri) ? '<span class="badge badge-q">IN QUEUE</span>' : hset.has(t.uri) ? '<span class="badge badge-h">SUNG</span>' : ''}</div>
         <div class="t2">${esc(t.artists)}</div>
       </div>
       <div class="r-dur">${fmtDur(t.duration)}</div>
-      <div class="r-add">+</div>
+      <div class="r-add">${t.playable ? '+' : '–'}</div>
     </button>`).join('') +
     (sr.items.length < sr.total ? `<button class="btn btn-ghost more" data-act="more" ${sr.loading ? 'disabled' : ''}>${sr.loading ? 'Loading…' : 'Show more'}</button>` : '');
 }
 
-function stuckDiag(){
-  if (S.stuckReason === 'missing') return `Spotify doesn’t list "${esc(S.device.name)}" as a device right now. Open Spotify on it, play anything for a second, then tap Change speaker.`;
-  const p = S.player;
-  if (S.pollError) return 'Couldn’t check playback: ' + esc(S.pollError) + (S.stuckReason ? ' Last error: ' + esc(S.stuckReason) : '');
-  let d = p && p.deviceName
-    ? `Spotify says: ${p.uri ? (p.isPlaying ? 'playing' : 'paused on') + ' “' + esc(p.name) + '”' : 'nothing loaded'} on ${esc(p.deviceName)}.`
-    : 'Spotify says: no device is active right now.';
-  const lp = S.lastPlay;
-  if (lp) d += lp.status === 202
-    ? ` Last play request (${fmtClock(lp.at)}): Spotify answered 202 — it couldn’t reach the speaker. Quit Spotify on it completely and reopen it.`
-    : lp.status === 204 || lp.status === 200
-    ? ` Last play request (${fmtClock(lp.at)}): Spotify accepted it, but the speaker didn’t load the song. Quit and reopen Spotify on it, or play any song there once by hand.`
-    : ` Last play request (${fmtClock(lp.at)}): HTTP ${lp.status}.`;
-  else d += ' No play request has been sent yet — tap Try again.';
-  if (S.stuckReason) d += ' Last error: ' + esc(S.stuckReason);
-  return d;
-}
-function renderForeign(){
+/* The yellow banner: one problem at a time, most important first */
+function renderBanner(){
   const el = $('#foreign'); if (!el) return;
-  const f = S.foreign;
-  if (S.now && S.stuck) {
-    el.classList.remove('hidden');
-    el.innerHTML = `
-      <div class="msg">⚠️ <b>${esc(S.device ? S.device.name : 'The speaker')} isn’t starting the song.</b> Open the Spotify app on it and leave it on screen, then tap Try again.${S.device && /phone|tablet/i.test(S.device.type) ? ' (iPhones put Spotify to sleep in the background.)' : ''}
-        <div class="t2" style="white-space:normal;margin-top:4px">${stuckDiag()}</div></div>
+  const show = html => { el.innerHTML = html; el.classList.remove('hidden'); };
+  if (!S.now) { el.classList.add('hidden'); return; }
+  const dev = esc(S.device ? S.device.name : 'the speaker');
+  if (S.startFail) {
+    const p = S.player, lp = S.lastPlay;
+    let detail = S.startFail.msg ? esc(S.startFail.msg) : '';
+    if (!detail) {
+      detail = p && p.deviceName ? `Spotify says: ${p.uri ? (p.isPlaying ? 'playing' : 'paused on') + ' “' + esc(p.name) + '”' : 'nothing loaded'} on ${esc(p.deviceName)}.` : 'Spotify says: no device is active right now.';
+      if (lp) detail += lp.status === 202 ? ' Spotify couldn’t reach the speaker.' : lp.status < 300 ? ' Spotify accepted the request.' : ` Play request → HTTP ${lp.status}.`;
+    }
+    return show(`<div class="msg">⚠️ <b>Spotify couldn’t start “${esc(S.now.name)}” on ${dev}.</b>
+        The song may not be available in your country, or Spotify on ${dev} isn’t responding.
+        <div class="t2" style="white-space:normal;margin-top:4px">${detail}</div></div>
       <button class="btn btn-cyan" data-act="f-retry">↻ Try again</button>
-      <button class="btn btn-ghost" data-act="device">🔈 Change speaker</button>`;
-    return;
+      <button class="btn btn-ghost" data-act="f-skipfail">⏭ Skip this song</button>
+      <button class="btn btn-ghost" data-act="device">🔈 Speaker</button>`);
   }
-  if (S.now && S.pollError) {
-    el.classList.remove('hidden');
-    el.innerHTML = `<div class="msg">⚠️ <b>Can’t check what Spotify is playing.</b> ${esc(S.pollError)} Songs may not move to the next one automatically until this clears.</div>
-      <button class="btn btn-ghost" data-act="settings">🩺 Settings → Diagnostics</button>`;
-    return;
+  if (S.pollError) {
+    return show(`<div class="msg">⚠️ <b>Can’t check what Spotify is playing.</b> ${esc(S.pollError)} Songs may not move on automatically until this clears.</div>`);
   }
-  if (!f || !S.now) { el.classList.add('hidden'); return; }
-  el.classList.remove('hidden');
-  el.innerHTML = `
-    <div class="msg">⚠️ ${f.uri ? `Spotify is playing <b>${esc(f.name)}</b>${f.artists ? ' by ' + esc(f.artists) : ''}, which isn’t from the karaoke queue.` : `<b>Spotify stopped playing</b> in the middle of a song.`}</div>
+  const f = S.foreign;
+  if (!f) { el.classList.add('hidden'); return; }
+  show(`<div class="msg">⚠️ ${f.uri ? `Spotify is playing <b>${esc(f.name)}</b>${f.artists ? ' by ' + esc(f.artists) : ''}, which isn’t from the karaoke queue.` : `<b>Spotify isn’t playing the karaoke song</b> right now.`}</div>
     <button class="btn btn-cyan" data-act="f-resume">↩ Resume ${esc(S.now.label || S.now.name)}</button>
     <button class="btn btn-ghost" data-act="f-next" ${S.queue.length ? '' : 'disabled'}>⏭ Next in queue</button>
-    <button class="btn btn-ghost" data-act="f-dismiss">Dismiss</button>`;
+    <button class="btn btn-ghost" data-act="f-dismiss">Dismiss</button>`);
 }
 
-// light ticker: progress bar, unlock countdown, wait times
-let tickN = 0;
+// once a second: progress bar, unlock countdown; wait times every 15s
+let tickN = 0, lastUnlocked = false;
 setInterval(() => {
   if ($('#scrMain').classList.contains('hidden')) return;
   tickN++;
   renderLock();
-  const e = S.now, p = S.player;
-  if (e && sameTrack(p, e)) {
-    const prog = Math.min(e.duration, p.progress + (p.isPlaying ? Date.now() - p.at : 0));
-    const bar = $('#nowBar'), pos = $('#nowPos');
+  const e = S.now;
+  if (e && sameTrack(S.player, e)) {
+    const prog = nowProgress();
+    const bar = $('#nowBar'), pos = $('#nowPos'), left = $('#nowLeft');
     if (bar) bar.style.width = (prog / e.duration * 100).toFixed(1) + '%';
-    if (pos) { pos.textContent = fmtDur(prog); pos.nextElementSibling.textContent = '-' + fmtDur(e.duration - prog); }
+    if (pos) pos.textContent = fmtDur(prog);
+    if (left) left.textContent = '-' + fmtDur(e.duration - prog);
   }
   const u = isUnlocked();
   if (u !== lastUnlocked) { lastUnlocked = u; renderQueue(); renderNow(); }
   else if (tickN % 15 === 0) renderQueue();
 }, 1000);
-let lastUnlocked = false;
 
-/* =========================================================
+/* =====================================================================
    Search
-   ========================================================= */
+   ===================================================================== */
 let searchTimer, searchSeq = 0;
 function onSearchInput(v){
   S.search.q = v; clearTimeout(searchTimer);
   if (!v.trim()) { searchSeq++; S.search.items = []; S.search.total = 0; S.search.loading = false; renderResults(); return; }
-  searchTimer = setTimeout(() => doSearch(false), 350);
   $('.search-box .clear').classList.remove('hidden');
+  searchTimer = setTimeout(() => doSearch(false), 350);
+}
+async function searchTracks(q, limit, offset = 0){
+  const j = await api('GET', '/search?' + new URLSearchParams({ q, type: 'track', limit: String(limit), offset: String(offset), market: MARKET }));
+  return { items: ((j && j.tracks && j.tracks.items) || []).filter(Boolean).map(mapTrack), total: (j && j.tracks && j.tracks.total) || 0 };
 }
 async function doSearch(more){
   const seq = ++searchSeq, q = S.search.q.trim();
-  const offset = more ? S.search.items.length : 0;
-  S.search.loading = true; S.search.error = ''; if (!more) S.search.items = S.search.items; renderResults();
+  S.search.loading = true; S.search.error = ''; renderResults();
   try{
-    const j = await api('GET', '/search?' + new URLSearchParams({ q, type: 'track', limit: '10', offset: String(offset) }));
+    const r = await searchTracks(q, 10, more ? S.search.items.length : 0);
     if (seq !== searchSeq) return;
-    const items = ((j.tracks && j.tracks.items) || []).filter(Boolean).map(mapTrack);
-    S.search.items = more ? S.search.items.concat(items) : items;
-    S.search.total = Math.min((j.tracks && j.tracks.total) || 0, 200);
+    S.search.items = more ? S.search.items.concat(r.items) : r.items;
+    S.search.total = Math.min(r.total, 200);
   }catch(e){ if (seq === searchSeq) { S.search.error = e.message; if (!more) S.search.items = []; } }
   if (seq === searchSeq) { S.search.loading = false; renderResults(); }
 }
-function clearSearch(){
-  const q = $('#q'); q.value = ''; onSearchInput('');
+function clearSearch(){ $('#q').value = ''; onSearchInput(''); }
+
+/* =====================================================================
+   Adding songs
+   ===================================================================== */
+function duplicateInfo(uri){
+  const out = [];
+  if (S.now && S.now.uri === uri) out.push('It’s playing right now.');
+  const qi = S.queue.findIndex(e => e.uri === uri);
+  if (qi >= 0 && S.queue[qi].hidden) out.push('Someone already picked this as a secret song 🤫');
+  else if (qi >= 0) out.push(`It’s already in the queue (#${qi + 1}${S.queue[qi].label ? ', ' + esc(S.queue[qi].label) : ''}).`);
+  const h = S.history.filter(e => e.uri === uri && !(S.now && e.playId === S.now.playId));
+  if (h.length) out.push(`It was already sung tonight at ${fmtClock(h[h.length - 1].playedAt)}${h[h.length - 1].label ? ' by ' + esc(h[h.length - 1].label) : ''}.`);
+  return out;
 }
 
-/* =========================================================
-   Add-song sheet
-   ========================================================= */
+function addToQueue(entry, where){
+  if (where === 'next') S.queue.unshift(entry); else S.queue.push(entry);
+  save(); renderAll();
+  const pos = where === 'next' ? 1 : S.queue.length;
+  if (S.running && !S.now) { startNext(); toast('Added — starting now! 🎤', 'ok'); return; }
+  toast(`Added — #${pos} in line${S.now ? ', starts ' + fmtWait(waitBefore(pos - 1)) : ''}`, 'ok');
+}
+
 function openAddSheet(track){
+  if (!track.playable) { toast('That version isn’t available on Spotify in your country — try another result.', 'err'); return; }
   const dups = duplicateInfo(track.uri);
   let hidden = false;
   const pos = S.queue.length + 1;
@@ -1060,11 +1041,11 @@ function openAddSheet(track){
     ${dups.length ? `<div class="warn">⚠️ Heads up: ${dups.join(' ')}</div>` : ''}
     <label class="field"><span>Name in the queue (optional)</span>
       <input id="labelIn" maxlength="40" placeholder="Singer name, code name, anything…" autocomplete="off" autocorrect="off" spellcheck="false"></label>
-    <button class="toggle" data-act="toggle-hidden" id="hidTog"><span class="sw"></span>
+    <button class="toggle" data-act="toggle-hidden"><span class="sw"></span>
       <span><b>Surprise! 🤫</b><small>Hide the song title in the queue until it plays</small></span></button>
     <div class="stack">
       <button class="btn btn-primary" data-act="add-end">➕ Add to queue</button>
-      <div class="info-line" id="addInfo">Goes to the end — #${pos} in line${S.now || S.queue.length ? ', starts ' + fmtWait(waitBefore(S.queue.length)) : ''}</div>
+      <div class="info-line">Goes to the end — #${pos} in line${S.now || S.queue.length ? ', starts ' + fmtWait(waitBefore(S.queue.length)) : ''}</div>
       <div class="divider"></div>
       <div class="row2">
         <button class="btn btn-cyan" data-act="add-next">⏭ Play next ${isUnlocked() ? '' : '🔒'}</button>
@@ -1073,39 +1054,64 @@ function openAddSheet(track){
       <button class="btn btn-ghost" data-act="cancel">Cancel</button>
     </div>`, {
     async onClick(act, el, mm){
-      const mk = () => Object.assign({}, track, { qid: uid(), label: m.el.querySelector('#labelIn').value.trim(), hidden, addedAt: Date.now() });
+      const make = () => Object.assign({}, track, { qid: uid(), label: m.el.querySelector('#labelIn').value.trim(), hidden, addedAt: Date.now() });
       if (act === 'toggle-hidden') { hidden = !hidden; el.classList.toggle('on', hidden); }
       if (act === 'cancel') mm.close();
-      if (act === 'add-end') { const e = mk(); mm.close(); addToQueue(e, 'end'); afterAdd(e); }
-      if (act === 'add-next') {
-        const e = mk(); mm.close();
-        if (await requirePin('add a song to play next')) { addToQueue(e, 'next'); afterAdd(e); }
-      }
-      if (act === 'add-now') {
-        const e = mk(); mm.close();
-        if (await playNowFlow(e)) afterAdd(e);
-      }
+      if (act === 'add-end') { const e = make(); mm.close(); addToQueue(e, 'end'); afterAdd(e); }
+      if (act === 'add-next') { const e = make(); mm.close(); if (await requirePin('add a song to play next')) { addToQueue(e, 'next'); afterAdd(e); } }
+      if (act === 'add-now') { const e = make(); mm.close(); if (await playNowFlow(e)) afterAdd(e); }
     }
   });
 }
-function afterAdd(e){
-  // keep surprises secret from whoever gets the iPad next
-  if (e.hidden) clearSearch();
-  else renderResults();
+function afterAdd(e){ if (e.hidden) clearSearch(); else renderResults(); }   // keep surprises secret from the next person
+
+async function playNowFlow(entry){
+  if (!(await requirePin('play a song immediately'))) return false;
+  if (S.now) {
+    const cur = S.now;
+    const curName = cur.label ? `${esc(cur.label)} — ${esc(cur.name)}` : esc(cur.name);
+    const choice = await confirmDialog({
+      title: '⚠️ Stop the current song?',
+      body: `<b style="color:var(--text)">${curName}</b> is on stage. What should happen to it?`,
+      buttons: [
+        { label: '▶ Play now — put current song back next in line', value: 'bump', cls: 'btn-danger' },
+        { label: '▶ Play now — drop the current song', value: 'drop', cls: 'btn-danger' },
+        { label: 'Cancel', value: null }
+      ]
+    });
+    if (!choice) return false;
+    if (choice === 'bump') { S.history = S.history.filter(h => h.playId !== cur.playId); S.queue.unshift(stripPlay(cur)); }
+  } else {
+    if (!(await confirmDialog({ title: 'Play this now?', body: 'It will start playing immediately.', buttons: yesNo('▶ Play now') }))) return false;
+  }
+  clearTimeout(endTimer);
+  try { await playEntry(entry); return true; } catch(e){ save(); renderAll(); return false; }
 }
 
-/* =========================================================
-   Devices
-   ========================================================= */
-async function openDevicePicker(note){
-  const icons = { Computer:'💻', Smartphone:'📱', Speaker:'🔊', TV:'📺', Tablet:'📱', CastVideo:'📺', CastAudio:'🔊', AVR:'🔊', Automobile:'🚗' };
+async function moveQueue(i, to){
+  if (!(await requirePin(to === -1 ? 'remove songs' : 'reorder the queue'))) return;
+  const item = S.queue[i]; if (!item) return;
+  if (to === -1) {
+    const name = item.label ? `${esc(item.label)}${item.hidden ? '' : ' — ' + esc(item.name)}` : (item.hidden ? 'this secret song' : esc(item.name));
+    if (!(await confirmDialog({ title: 'Remove from queue?', body: name, buttons: yesNo('Remove') }))) return;
+    S.queue = S.queue.filter(e => e.qid !== item.qid);
+  } else {
+    S.queue.splice(i, 1); S.queue.splice(Math.max(0, Math.min(to, S.queue.length)), 0, item);
+  }
+  save(); renderAll();
+}
+
+/* =====================================================================
+   Speaker picker
+   ===================================================================== */
+function openDevicePicker(note){
   if (document.querySelector('#devList')) return;
+  let devices = [];
   const m = openModal(`
     <h2>🔈 Where should the music play?</h2>
-    <p>${note ? esc(note) + ' ' : ''}Open Spotify on the speaker device (laptop, TV, phone…) and play anything once so it shows up here.</p>
+    <p>${note ? esc(note) + ' ' : ''}Open Spotify on the speaker device (computer, TV, phone…) and play any song once so it shows up here.</p>
     <div id="devList" class="stack"><div class="empty">Looking for devices…</div></div>
-    <div class="stack"><button class="btn btn-ghost" data-act="refresh">↻ Refresh</button>
-    <button class="btn btn-ghost" data-act="close">Done</button></div>`, {
+    <div class="stack"><button class="btn btn-ghost" data-act="refresh">↻ Refresh</button><button class="btn btn-ghost" data-act="close">Done</button></div>`, {
     onClick(act, el, mm){
       if (act === 'refresh') load();
       if (act === 'close') mm.close();
@@ -1116,7 +1122,6 @@ async function openDevicePicker(note){
       }
     }
   });
-  let devices = [];
   async function load(){
     const list = m.el.querySelector('#devList');
     list.innerHTML = '<div class="empty">Looking for devices…</div>';
@@ -1125,7 +1130,7 @@ async function openDevicePicker(note){
       devices = ((j && j.devices) || []).filter(d => d.id && !d.is_restricted);
       list.innerHTML = devices.length ? devices.map((d, i) => `
         <button class="dev ${S.device && S.device.id === d.id ? 'sel' : ''}" data-act="pick" data-i="${i}">
-          <span class="ico">${icons[d.type] || '🔈'}</span>
+          <span class="ico">${DEVICE_ICONS[d.type] || '🔈'}</span>
           <span class="r-main"><div class="t1">${esc(d.name)}</div><div class="t2">${esc(d.type)}${d.is_active ? ' · active now' : ''}</div></span>
           ${S.device && S.device.id === d.id ? '✅' : ''}
         </button>`).join('')
@@ -1135,12 +1140,12 @@ async function openDevicePicker(note){
   load();
 }
 
-/* =========================================================
-   Settings
-   ========================================================= */
+/* =====================================================================
+   Settings, tonight's playlist, diagnostics
+   ===================================================================== */
 async function openSettings(){
   if (!(await requirePin('open settings'))) return;
-  const m = openModal(`
+  openModal(`
     <h2>⚙︎ Host settings</h2>
     <div class="stack">
       <button class="btn btn-cyan" data-act="import">📥 Import songs (playlist or CSV)</button>
@@ -1155,96 +1160,28 @@ async function openSettings(){
       <button class="btn btn-ghost" data-act="diag">🩺 Diagnostics</button>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
-      <div class="info-line">Karaoke Queue v1.8</div>
+      <div class="info-line">Karaoke Queue v${VERSION}</div>
     </div>`, {
     async onClick(act, el, mm){
-      if (act === 'close') mm.close();
-      if (act === 'device') { mm.close(); openDevicePicker(); }
-      if (act === 'import') { mm.close(); openImport(); }
-      if (act === 'lock') { S.unlockedUntil = 0; mm.close(); renderAll(); toast('Host controls locked'); }
-      if (act === 'pin') { mm.close(); openPinPad({ title: 'New host PIN', sub: 'At least 4 digits.', setMode: true, onDone: ok => ok && toast('PIN changed', 'ok') }); }
-      if (act === 'stop') { S.running = false; save(); mm.close(); renderAll(); toast('The queue will pause after this song'); }
-      if (act === 'clear-queue') {
-        mm.close();
-        if (await confirmDialog({ title: 'Clear the whole queue?', body: `${S.queue.length} song(s) will be removed.`, buttons: [{label:'Clear queue', value:true, cls:'btn-danger-solid'},{label:'Cancel', value:null}] })) {
-          S.queue = []; save(); renderAll(); toast('Queue cleared');
-        }
+      if (act === 'close') return mm.close();
+      mm.close();
+      if (act === 'import') openImport();
+      if (act === 'device') openDevicePicker();
+      if (act === 'diag') openDiagnostics();
+      if (act === 'lock') { S.unlockedUntil = 0; renderAll(); toast('Host controls locked'); }
+      if (act === 'pin') openPinPad({ title: 'New host PIN', sub: 'At least 4 digits.', setMode: true, onDone: ok => ok && toast('PIN changed', 'ok') });
+      if (act === 'stop') { S.running = false; save(); renderAll(); toast('The queue will pause after this song'); }
+      if (act === 'clear-queue' && await confirmDialog({ title: 'Clear the whole queue?', body: `${S.queue.length} song(s) will be removed.`, buttons: yesNo('Clear queue') })) {
+        S.queue = []; save(); renderAll(); toast('Queue cleared');
       }
-      if (act === 'new-party') {
-        mm.close();
-        if (await confirmDialog({ title: 'Start a new party?', body: 'Clears the queue and tonight’s list. (Save tonight’s list as a playlist first if you want it.)', buttons: [{label:'Start fresh', value:true, cls:'btn-danger-solid'},{label:'Cancel', value:null}] })) {
-          S.queue = []; S.history = []; S.now = null; S.seen = null; S.running = false; S.foreign = null; save(); renderAll(); toast('Fresh start 🎉');
-        }
+      if (act === 'new-party' && await confirmDialog({ title: 'Start a new party?', body: 'Clears the queue and tonight’s list. (Save tonight’s list as a playlist first if you want it.)', buttons: yesNo('Start fresh') })) {
+        S.queue = []; S.history = []; S.now = null; S.seen = null; S.start = null; S.startFail = null; S.running = false; S.foreign = null; save(); renderAll(); toast('Fresh start 🎉');
       }
-      if (act === 'diag') { mm.close(); openDiagnostics(); }
-      if (act === 'logout') {
-        mm.close();
-        if (await confirmDialog({ title: 'Log out of Spotify?', body: 'The queue is kept on this iPad.', buttons: [{label:'Log out', value:true, cls:'btn-danger-solid'},{label:'Cancel', value:null}] })) {
-          S.tokens = null; LS.del('tokens'); clearTimeout(pollTimer); showScreen();
-        }
+      if (act === 'logout' && await confirmDialog({ title: 'Log out of Spotify?', body: 'The queue is kept on this iPad.', buttons: yesNo('Log out') })) {
+        S.tokens = null; LS.del('tokens'); clearTimeout(pollTimer); showScreen();
       }
     }
   });
-}
-
-async function openDiagnostics(){
-  const m = openModal(`<h2>🩺 Diagnostics</h2><p>Take a screenshot of this if something isn’t working.</p>
-    <div id="diagBody" style="font:13px/1.5 ui-monospace,Menlo,monospace;color:var(--text);-webkit-user-select:text;user-select:text;word-break:break-word"></div>
-    <div class="stack"><button class="btn btn-ghost" data-act="test">▶ Test: list devices + playback state</button>
-    <button class="btn btn-cyan" data-act="testplay">🔊 Test: play ${S.now ? 'the current song' : 'the next song'} on the speaker</button><button class="btn btn-ghost" data-act="close">Close</button></div>`, {
-    wide: true,
-    async onClick(act, el, mm){
-      if (act === 'close') mm.close();
-      if (act === 'testplay') {
-        const e = S.now || S.queue[0];
-        if (!e || !S.device) { extra = 'Nothing to play (queue empty or no speaker).'; return draw(); }
-        extra = 'Testing… ' + e.name; draw();
-        const out = [];
-        try {
-          if (Date.now() > S.tokens.expiresAt) await refreshToken();
-          const hdr = { Authorization: 'Bearer ' + S.tokens.access, 'Content-Type': 'application/json' };
-          const r = await fetch(API + '/me/player/play?device_id=' + encodeURIComponent(S.device.id), { method: 'PUT', headers: hdr, body: JSON.stringify({ uris: [e.uri] }) });
-          const t = await r.text();
-          out.push(`PLAY ${e.uri} → HTTP ${r.status}${t ? ' ' + t.slice(0, 300) : ''}`);
-          await sleep(3000);
-          const r2 = await fetch(API + '/me/player', { headers: { Authorization: 'Bearer ' + S.tokens.access } });
-          const t2 = r2.status === 204 ? '' : await r2.text();
-          let st = null; try { st = t2 ? JSON.parse(t2) : null; } catch(x){}
-          out.push(`STATE after 3s → HTTP ${r2.status}: ` + (st ? `${st.is_playing ? 'playing' : 'paused'} "${st.item ? st.item.name + '" ' + st.item.uri : '-"'} on ${st.device ? st.device.name : '?'}${st.actions && st.actions.disallows ? ' disallows=' + Object.keys(st.actions.disallows).join(',') : ''}` : 'no active device'));
-          if (st && st.item && st.item.uri === e.uri && S.now === e) { S.seen = { playId: e.playId, progress: st.progress_ms || 0, at: Date.now(), playing: !!st.is_playing, confirmed: !!st.is_playing, retries: 0, startPos: 0 }; S.stuck = false; S.stuckReason = ''; save(); renderAll(); }
-        } catch(err){ out.push('ERROR ' + err.message); }
-        extra = out.join('\n'); draw();
-      }
-      if (act === 'test') {
-        for (const k in quotaUntil) delete quotaUntil[k];
-        try { const d = await api('GET', '/me/player/devices'); extra = 'Devices: ' + (((d && d.devices) || []).map(x => `${x.name} [${x.type}${x.is_active ? ', active' : ''}${x.is_restricted ? ', RESTRICTED' : ''}] id=${x.id.slice(0, 8)}…`).join(' | ') || 'none'); }
-        catch(e){ extra = 'Devices error: ' + e.message; }
-        try { const st = await api('GET', '/me/player'); extra += '\nPlayer: ' + (st ? `${st.is_playing ? 'playing' : 'paused'} "${st.item ? st.item.name : '-'}" on ${st.device ? st.device.name : '?'}` : '204 — no active device'); }
-        catch(e){ extra += '\nPlayer error: ' + e.message; }
-        draw();
-      }
-    }
-  });
-  let extra = '', who = '…';
-  function draw(){
-    const p = S.player, sn = S.seen;
-    m.el.querySelector('#diagBody').innerHTML = esc([
-      'Version: v1.8',
-      'Account: ' + who,
-      'Scopes: ' + (S.tokens && S.tokens.scope != null ? S.tokens.scope : 'unknown (logged in before v1.3)'),
-      'Speaker: ' + (S.device ? `${S.device.name} [${S.device.type}] id=${S.device.id.slice(0, 8)}…` : 'none'),
-      'Last poll: ' + (S.pollError ? 'ERROR ' + S.pollError : p ? `${p.uri ? (p.isPlaying ? 'playing' : 'paused') + ' "' + p.name + '"' : 'nothing'} on ${p.deviceName || '(no active device)'} — ${Math.round((Date.now() - p.at) / 1000)}s ago` : 'none yet'),
-      'Now: ' + (S.now ? `${S.now.name} ${S.now.uri} confirmed=${!!(sn && sn.confirmed)} retries=${sn ? sn.retries || 0 : '-'} stuck=${!!S.stuck}${S.stuckReason ? ' reason=' + S.stuckReason : ''}` : 'nothing'),
-      'Next in queue: ' + (S.queue[0] ? `${S.queue[0].name} ${S.queue[0].uri}` : '-'),
-      'Queue: ' + S.queue.length + ' · running=' + S.running,
-      extra,
-      '— Recent Spotify calls (newest first) —',
-      ...apiLog.slice().reverse().slice(0, 30).map(c => `${fmtClock(c.at)} ${c.method} ${c.path} → ${c.status}${c.note ? ' (' + c.note + ')' : ''}`)
-    ].filter(Boolean).join('\n')).replace(/\n/g, '<br>');
-  }
-  draw();
-  try { const me = await api('GET', '/me'); who = `${me.display_name || ''} (${me.id})`; } catch(e){ who = 'error: ' + e.message; }
-  draw();
 }
 
 async function saveHistoryPlaylist(){
@@ -1259,20 +1196,65 @@ async function saveHistoryPlaylist(){
   }catch(e){ toast('Couldn’t save the playlist: ' + e.message, 'err'); }
 }
 
-/* =========================================================
-   Event wiring
-   ========================================================= */
-/* =========================================================
-   Import (Spotify playlist or CSV) — host only
-   ========================================================= */
-const CSV_TEMPLATE = 'Song,Artist,Singer,Secret\nDancing Queen,ABBA,Maria,\nBohemian Rhapsody,Queen,The Band,\nI Will Survive,Gloria Gaynor,Agent X,yes\n';
-
-function hasScope(s){ return S.tokens && S.tokens.scope != null ? S.tokens.scope.split(' ').includes(s) : null; }
-async function askReconnect(why){
-  const ok = await confirmDialog({ title: 'Reconnect Spotify?', body: esc(why) + ' Your queue is kept.',
-    buttons: [{ label: 'Reconnect Spotify', value: true, cls: 'btn-primary' }, { label: 'Cancel', value: null }] });
-  if (ok) login();
+async function openDiagnostics(){
+  let extra = '', who = '…';
+  const m = openModal(`<h2>🩺 Diagnostics</h2><p>Screenshot this if something isn’t working.</p>
+    <div id="diagBody" style="font:13px/1.5 ui-monospace,Menlo,monospace;color:var(--text);-webkit-user-select:text;user-select:text;word-break:break-word"></div>
+    <div class="stack">
+      <button class="btn btn-cyan" data-act="testplay">🔊 Test: play ${S.now ? 'the current song' : 'the next song'} on the speaker</button>
+      <button class="btn btn-ghost" data-act="test">Test: list devices + what’s playing</button>
+      <button class="btn btn-ghost" data-act="close">Close</button></div>`, {
+    wide: true,
+    async onClick(act, el, mm){
+      if (act === 'close') return mm.close();
+      for (const k in quotaUntil) delete quotaUntil[k];
+      if (act === 'test') {
+        try { const d = await api('GET', '/me/player/devices'); extra = 'Devices: ' + (((d && d.devices) || []).map(x => `${x.name} [${x.type}${x.is_active ? ', active' : ''}${x.is_restricted ? ', RESTRICTED' : ''}]`).join(' | ') || 'none'); }
+        catch(e){ extra = 'Devices error: ' + e.message; }
+        try { const st = await api('GET', '/me/player'); extra += '\nPlayer: ' + (st ? `${st.is_playing ? 'playing' : 'paused'} "${st.item ? st.item.name : '-'}" on ${st.device ? st.device.name : '?'}` : 'no active device'); }
+        catch(e){ extra += '\nPlayer error: ' + e.message; }
+        draw();
+      }
+      if (act === 'testplay') {
+        const e = S.now || S.queue[0];
+        if (!e || !S.device) { extra = 'Nothing to play (queue empty or no speaker).'; return draw(); }
+        extra = 'PLAY ' + e.name + ' …'; draw();
+        try {
+          await playOnDevice(e.uri, 0);
+          extra = `PLAY "${e.name}" → accepted (HTTP ${S.lastPlay ? S.lastPlay.status : '?'})`;
+        } catch(err){ extra = `PLAY "${e.name}" → ${err.status || ''} ${err.message}`; draw(); return; }
+        draw(); await sleep(3000);
+        try { const st = await api('GET', '/me/player'); extra += '\nSTATE after 3s: ' + (st ? `${st.is_playing ? 'PLAYING' : 'paused'} "${st.item ? st.item.name : '-'}" on ${st.device ? st.device.name : '?'}` : 'no active device'); }
+        catch(err){ extra += '\nSTATE error: ' + err.message; }
+        draw(); poll();
+      }
+    }
+  });
+  function draw(){
+    const p = S.player, st = S.start;
+    m.el.querySelector('#diagBody').innerHTML = esc([
+      'Version: v' + VERSION,
+      'Account: ' + who,
+      'Missing permissions: ' + (missingScopes().join(', ') || 'none'),
+      'Speaker: ' + (S.device ? `${S.device.name} [${S.device.type}]` : 'none'),
+      'Last check: ' + (S.pollError ? 'ERROR ' + S.pollError : p ? `${p.uri ? (p.isPlaying ? 'playing' : 'paused') + ' "' + p.name + '"' : 'nothing loaded'} on ${p.deviceName || '(no active device)'} — ${Math.round((Date.now() - p.at) / 1000)}s ago` : 'none yet'),
+      'On stage: ' + (S.now ? `${S.now.name} (${S.now.uri})${st && st.playId === S.now.playId ? ` started=${!!st.ok} attempts=${st.attempts}` : ''}${S.startFail ? ' FAILED' : ''}` : 'nothing'),
+      'Queue: ' + S.queue.length + ' · auto-play=' + S.running,
+      extra,
+      '— Recent Spotify calls (newest first) —',
+      ...apiLog.slice().reverse().slice(0, 25).map(c => `${fmtClock(c.at)} ${c.method} ${c.path} → ${c.status}${c.note ? ' (' + c.note + ')' : ''}`)
+    ].filter(Boolean).join('\n')).replace(/\n/g, '<br>');
+  }
+  draw();
+  try { const me = await api('GET', '/me'); who = `${me.display_name || ''} (${me.id})`; } catch(e){ who = 'error: ' + e.message; }
+  draw();
 }
+
+/* =====================================================================
+   Import a starting queue — Spotify playlist, CSV file, or pasted CSV
+   (host only; always added to the END of the queue)
+   ===================================================================== */
+const CSV_TEMPLATE = 'Song,Artist,Singer,Secret\nDancing Queen,ABBA,Maria,\nBohemian Rhapsody,Queen,The Band,\nI Will Survive,Gloria Gaynor,Agent X,yes\n';
 
 function openImport(){
   const m = openModal(`
@@ -1295,8 +1277,7 @@ function openImport(){
   });
   m.el.querySelector('#csvFile').addEventListener('change', async ev => {
     const f = ev.target.files && ev.target.files[0]; if (!f) return;
-    const text = await f.text();
-    m.close(); importCsvText(text);
+    const text = await f.text(); m.close(); importCsvText(text);
   });
 }
 
@@ -1316,8 +1297,8 @@ function openCsvPaste(){
 
 function parseCSV(text){
   text = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const firstLine = text.split('\n')[0] || '';
-  const delim = (!firstLine.includes(',') && firstLine.includes('\t')) ? '\t' : (!firstLine.includes(',') && firstLine.includes(';')) ? ';' : ',';
+  const first = text.split('\n')[0] || '';
+  const delim = (!first.includes(',') && first.includes('\t')) ? '\t' : (!first.includes(',') && first.includes(';')) ? ';' : ',';
   const rows = []; let row = [], f = '', q = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
@@ -1330,17 +1311,15 @@ function parseCSV(text){
   row.push(f); rows.push(row);
   return rows.map(r => r.map(x => x.trim())).filter(r => r.some(x => x));
 }
-
 function csvToRows(text){
   const rows = parseCSV(text);
   if (!rows.length) return [];
   const H = { song: /^(song|songs|title|song title|track|track name|song name)$/i, artist: /^(artist|artists|artist name|band|by)$/i,
               label: /^(singer|singers|singer name|label|who|name|performer|code ?name)$/i, hidden: /^(secret|hidden|surprise|secret\?)$/i };
   let idx = { song: 0, artist: 1, label: 2, hidden: 3 }, start = 0;
-  const head = rows[0];
-  if (head.some(h => H.song.test(h) || H.artist.test(h))) {
+  if (rows[0].some(h => H.song.test(h) || H.artist.test(h))) {
     idx = { song: -1, artist: -1, label: -1, hidden: -1 };
-    head.forEach((h, i) => { for (const k in H) if (idx[k] < 0 && H[k].test(h)) idx[k] = i; });
+    rows[0].forEach((h, i) => { for (const k in H) if (idx[k] < 0 && H[k].test(h)) idx[k] = i; });
     if (idx.song < 0) idx.song = 0;
     start = 1;
   }
@@ -1353,13 +1332,10 @@ function csvToRows(text){
 
 function normName(s){ return String(s || '').toLowerCase().replace(/\s*[\(\[].*?[\)\]]\s*/g, ' ').replace(/\s+-\s+.*$/, '').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
 async function matchCsvRow(r){
-  const searchFor = async q => {
-    const j = await api('GET', '/search?' + new URLSearchParams({ q, type: 'track', limit: '5' }));
-    return ((j && j.tracks && j.tracks.items) || []).filter(Boolean).map(mapTrack);
-  };
-  let items = await searchFor(r.artist ? `track:${r.song} artist:${r.artist}` : r.song);
-  if (!items.length && r.artist) items = await searchFor(`${r.song} ${r.artist}`);
-  // prefer an exact title match, then the same title with extras like "- Remastered"
+  let items = (await searchTracks(r.artist ? `track:${r.song} artist:${r.artist}` : r.song, 5)).items;
+  if (!items.filter(t => t.playable).length && r.artist) items = (await searchTracks(`${r.song} ${r.artist}`, 5)).items;
+  items = items.filter(t => t.playable);
+  // exact title first, then same title with extras like "- Remastered", then Spotify's order
   const raw = r.song.trim().toLowerCase(), want = normName(r.song);
   const score = t => t.name.trim().toLowerCase() === raw ? 0 : normName(t.name) === want ? 1 : 2;
   return items.map((t, i) => [score(t), i, t]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
@@ -1379,12 +1355,12 @@ async function importCsvText(text){
     const r = rows[i];
     let cands = [];
     try { cands = await matchCsvRow(r); }
-    catch(e){ if (e.status === 429) { await sleep(3000); try { cands = await matchCsvRow(r); } catch(e2){} } }
+    catch(e){ if (e.quota) { m.close(); toast(e.message, 'err'); return; } if (e.status === 429) { await sleep(3000); try { cands = await matchCsvRow(r); } catch(e2){} } }
     items.push({ src: r, cands, choice: cands.length ? 0 : -1, checked: cands.length > 0, label: r.label, hidden: r.hidden });
     const pe = m.el.querySelector('#impProg'), be = m.el.querySelector('#impBar');
     if (pe) pe.textContent = `${i + 1} / ${rows.length}`;
     if (be) be.style.width = ((i + 1) / rows.length * 100) + '%';
-    await sleep(120);
+    await sleep(150);
   }
   if (cancelled) return;
   m.close();
@@ -1392,7 +1368,7 @@ async function importCsvText(text){
 }
 
 async function openPlaylistPicker(){
-  if (hasScope('playlist-read-private') === false) return askReconnect('Spotify needs one more permission so the app can read your playlists.');
+  let lists = [];
   const m = openModal(`<h2>🎧 Pick a playlist</h2><p>Only playlists you own or collaborate on can be imported (a Spotify rule).</p>
     <div id="plList"><div class="empty">Loading your playlists…</div></div>
     <div class="stack"><button class="btn btn-ghost" data-act="close">Cancel</button></div>`, {
@@ -1401,7 +1377,6 @@ async function openPlaylistPicker(){
       if (act === 'pl-pick') { const pl = lists[+el.dataset.i]; mm.close(); importPlaylist(pl); }
     }
   });
-  let lists = [];
   try{
     const me = await api('GET', '/me');
     for (let off = 0; off < 500; off += 50) {
@@ -1411,7 +1386,7 @@ async function openPlaylistPicker(){
       if (!j || !j.next || !page.length) break;
     }
     lists = lists.map(p => ({ id: p.id, name: p.name, art: p.images && p.images.length ? p.images[p.images.length - 1].url : '',
-      total: (p.items && p.items.total) != null ? p.items.total : (p.tracks && p.tracks.total) != null ? p.tracks.total : null,
+      total: (p.items && p.items.total != null) ? p.items.total : (p.tracks && p.tracks.total != null) ? p.tracks.total : null,
       mine: (p.owner && p.owner.id === me.id) || p.collaborative, owner: p.owner && (p.owner.display_name || p.owner.id) }));
     lists.sort((a, b) => (b.mine ? 1 : 0) - (a.mine ? 1 : 0));
     const box = m.el.querySelector('#plList'); if (!box) return;
@@ -1421,11 +1396,7 @@ async function openPlaylistPicker(){
         <div class="r-main"><div class="t1">${esc(p.name)}</div>
         <div class="t2">${p.total != null ? p.total + ' songs' : ''}${p.mine ? '' : ' · by ' + esc(p.owner) + ' — not yours, can’t import'}</div></div>
       </button>`).join('') : '<div class="empty">No playlists found on this account.</div>';
-  }catch(e){
-    m.close();
-    if (e.status === 403 && /scope/i.test(e.message)) return askReconnect('Spotify needs one more permission so the app can read your playlists.');
-    toast('Couldn’t load playlists: ' + e.message, 'err');
-  }
+  }catch(e){ m.close(); toast('Couldn’t load playlists: ' + e.message, 'err'); }
 }
 
 async function importPlaylist(pl){
@@ -1433,20 +1404,20 @@ async function importPlaylist(pl){
   const items = [];
   try{
     for (let off = 0; off < 2000; off += 50) {
-      const j = await api('GET', `/playlists/${pl.id}/items?limit=50&offset=${off}`);
+      // market=from_token makes Spotify swap in the version that's playable in your country
+      const j = await api('GET', `/playlists/${pl.id}/items?limit=50&offset=${off}&market=${MARKET}`);
       const page = (j && j.items) || [];
       for (const it of page) {
         const t = it && (it.item || it.track);
-        if (!t || t.type === 'episode' || !t.uri || t.uri.startsWith('spotify:local') || t.is_local) continue;
+        if (!t || t.type === 'episode' || !t.uri || t.is_local || t.uri.startsWith('spotify:local')) continue;
         const tr = mapTrack(t);
-        items.push({ src: null, cands: [tr], choice: 0, checked: true, label: '', hidden: false });
+        items.push({ src: null, cands: [tr], choice: tr.playable ? 0 : -1, checked: tr.playable, label: '', hidden: false, unavailable: !tr.playable });
       }
       const pe = m.el.querySelector('#impProg'); if (pe) pe.textContent = `${items.length} songs…`;
       if (!j || !j.next || !page.length) break;
     }
   }catch(e){
     m.close();
-    if (e.status === 403 && /scope/i.test(e.message)) return askReconnect('Spotify needs one more permission so the app can read your playlists.');
     if (e.status === 403) return toast('Spotify won’t share this playlist’s songs — only playlists you own or collaborate on work.', 'err');
     return toast('Couldn’t load the playlist: ' + e.message, 'err');
   }
@@ -1459,7 +1430,9 @@ function openImportReview(items, sourceName){
   let open = -1;
   const inQ = new Set(S.queue.map(e => e.uri)); if (S.now) inQ.add(S.now.uri);
   const sung = new Set(S.history.map(e => e.uri));
-  const m = openModal(`<h2>Review import</h2><p>From ${esc(sourceName)}. Uncheck anything you don’t want${items.some(x => x.src) ? ', or tap <b style="color:var(--text)">Change</b> to pick a different version' : ''}.</p>
+  const unavailable = items.filter(it => it.unavailable).length;
+  const m = openModal(`<h2>Review import</h2><p>From ${esc(sourceName)}. Uncheck anything you don’t want${items.some(x => x.src) ? ', or tap <b style="color:var(--text)">Change</b> to pick a different version' : ''}.
+      ${unavailable ? `<br>${unavailable} song${unavailable > 1 ? 's aren’t' : ' isn’t'} playable in your country and will be skipped.` : ''}</p>
     <div class="row2" style="margin-bottom:4px"><button class="btn btn-ghost" data-act="all">Select all</button><button class="btn btn-ghost" data-act="none">Select none</button></div>
     <div id="impList" class="imp-list"></div>
     <div class="imp-foot"><button class="btn btn-ghost" data-act="cancel" style="flex:0 0 auto">Cancel</button><button class="btn btn-primary" data-act="add" id="impAdd"></button></div>`, {
@@ -1489,13 +1462,13 @@ function openImportReview(items, sourceName){
     const btn = m.el.querySelector('#impAdd');
     btn.textContent = `➕ Add ${n} song${n === 1 ? '' : 's'} to queue`; btn.disabled = !n;
     m.el.querySelector('#impList').innerHTML = items.map((it, i) => {
-      const t = it.choice >= 0 ? it.cands[it.choice] : null;
-      const tag = t && inQ.has(t.uri) ? '<span class="badge badge-q">IN QUEUE</span>' : t && sung.has(t.uri) ? '<span class="badge badge-h">SUNG</span>' : '';
+      const t = it.choice >= 0 ? it.cands[it.choice] : (it.unavailable ? it.cands[0] : null);
+      const tag = it.unavailable ? '<span class="badge badge-e">NOT AVAILABLE</span>' : t && inQ.has(t.uri) ? '<span class="badge badge-q">IN QUEUE</span>' : t && sung.has(t.uri) ? '<span class="badge badge-h">SUNG</span>' : '';
       const srcLine = it.src ? `<div class="imp-src">CSV: ${esc(it.src.song)}${it.src.artist ? ' — ' + esc(it.src.artist) : ''}${it.label ? ' · 🎤 ' + esc(it.label) : ''}${it.hidden ? ' · 🤫 secret' : ''}</div>` : '';
       const row = `<div class="imp-row ${it.checked ? '' : 'off'}">
         <button class="cb ${it.checked ? 'on' : ''}" data-act="tog" data-i="${i}">${it.checked ? '✓' : ''}</button>
         ${t ? artHtml(t.art) : '<div class="art-ph">❓</div>'}
-        <div class="r-main">${t ? `<div class="t1">${esc(t.name)}${tag}</div><div class="t2">${esc(t.artists)} · ${fmtDur(t.duration)}</div>` : `<div class="t1" style="color:var(--red)">No match found</div>`}${srcLine}</div>
+        <div class="r-main">${t ? `<div class="t1">${esc(t.name)}${tag}</div><div class="t2">${esc(t.artists)} · ${fmtDur(t.duration)}</div>` : `<div class="t1" style="color:var(--red)">No playable match found</div>`}${srcLine}</div>
         ${it.src && it.cands.length ? `<button class="imp-change" data-act="change" data-i="${i}">${open === i ? 'Close' : 'Change'}</button>` : ''}
       </div>`;
       const cands = open === i ? `<div class="imp-cands">${it.cands.map((c, ci) => `
@@ -1508,19 +1481,10 @@ function openImportReview(items, sourceName){
   draw();
 }
 
-async function moveQueue(i, to){
-  if (!(await requirePin(to === -1 ? 'remove songs' : 'reorder the queue'))) return;
-  const item = S.queue[i]; if (!item) return;
-  if (to === -1) {
-    const name = item.label ? `${esc(item.label)}${item.hidden ? '' : ' — ' + esc(item.name)}` : (item.hidden ? 'this secret song' : esc(item.name));
-    const ok = await confirmDialog({ title: 'Remove from queue?', body: name, buttons: [{label:'Remove', value:true, cls:'btn-danger-solid'},{label:'Cancel', value:null}] });
-    if (!ok) return;
-    S.queue = S.queue.filter(e => e.qid !== item.qid);
-  } else {
-    S.queue.splice(i, 1); S.queue.splice(Math.max(0, Math.min(to, S.queue.length)), 0, item);
-  }
-  save(); renderAll();
-}
+/* =====================================================================
+   Taps
+   ===================================================================== */
+const devParam = () => S.device ? '?device_id=' + encodeURIComponent(S.device.id) : '';
 
 document.addEventListener('click', async ev => {
   const el = ev.target.closest('[data-act]');
@@ -1528,6 +1492,7 @@ document.addEventListener('click', async ev => {
   const act = el.dataset.act, i = +el.dataset.i;
   keepAwake();
   switch (act) {
+    /* setup + login */
     case 'copy-redirect':
       try { await navigator.clipboard.writeText(REDIRECT_URI); toast('Copied!', 'ok'); } catch(e){ toast('Press and hold to copy it'); }
       break;
@@ -1538,6 +1503,8 @@ document.addEventListener('click', async ev => {
     }
     case 'reset-client': S.clientId = ''; LS.del('clientId'); showScreen(); break;
     case 'login': login(); break;
+
+    /* header */
     case 'device': if (S.device ? await requirePin('change the speaker') : true) openDevicePicker(); break;
     case 'lock':
       if (isUnlocked()) { S.unlockedUntil = 0; renderAll(); toast('Host controls locked'); }
@@ -1545,63 +1512,79 @@ document.addEventListener('click', async ev => {
       break;
     case 'settings': openSettings(); break;
     case 'tab': S.tab = el.dataset.tab; renderTabs(); break;
+
+    /* search */
     case 'clear-search': clearSearch(); $('#q').focus(); break;
     case 'more': doSearch(true); break;
     case 'pick': $('#q').blur(); openAddSheet(S.search.items[i]); break;
+
+    /* now playing */
     case 'start': S.running = true; save(); startNext(); break;
     case 'pause':
-      try { await api('PUT', '/me/player/pause' + (S.device ? '?device_id=' + encodeURIComponent(S.device.id) : '')); if (S.player) { S.player.progress += Date.now() - S.player.at; S.player.at = Date.now(); S.player.isPlaying = false; } clearTimeout(endTimer); renderNow(); }
-      catch(e){ toast(e.message, 'err'); }
+      try {
+        await api('PUT', '/me/player/pause' + devParam());
+        if (S.player) { S.player.progress = nowProgress(); S.player.at = Date.now(); S.player.isPlaying = false; }
+        clearTimeout(endTimer); renderNow();
+      } catch(e){ toast(e.message, 'err'); }
       schedulePoll(1500); break;
     case 'resume':
       try {
-        const p = S.player;
-        if (S.now && sameTrack(p, S.now)) { await api('PUT', '/me/player/play' + (S.device ? '?device_id=' + encodeURIComponent(S.device.id) : '')); S.player.isPlaying = true; S.player.at = Date.now(); S.playIssuedAt = Date.now(); renderNow(); }
-        else if (S.now) await playEntry(S.now, { resume: true, positionMs: S.seen && S.seen.playId === S.now.playId ? S.seen.progress : 0 });
-      } catch(e){ if (e.message !== 'no device') toast(e.message, 'err'); }
+        if (S.now && sameTrack(S.player, S.now)) {
+          await api('PUT', '/me/player/play' + devParam());
+          S.player.isPlaying = true; S.player.at = Date.now(); renderNow();
+        } else if (S.now) await playEntry(S.now, { resume: true, positionMs: resumePosition() });
+      } catch(e){ if (!e.noDevice && !e.status) toast(e.message, 'err'); }
       schedulePoll(1500); break;
     case 'skip':
-      if (await requirePin('skip a song')) {
-        if (!S.queue.length) {
-          const ok = await confirmDialog({ title: 'Skip the last song?', body: 'The queue is empty, so the music will stop.', buttons: [{label:'Skip & stop', value:true, cls:'btn-danger-solid'},{label:'Cancel', value:null}] });
-          if (!ok) return;
-          api('PUT', '/me/player/pause').catch(() => {}); S.now = null; S.seen = null; save(); renderAll();
-        } else { startNext(); }
-      }
+      if (!(await requirePin('skip a song'))) break;
+      if (!S.queue.length) {
+        if (!(await confirmDialog({ title: 'Skip the last song?', body: 'The queue is empty, so the music will stop.', buttons: yesNo('Skip & stop') }))) break;
+        api('PUT', '/me/player/pause' + devParam()).catch(() => {});
+        S.now = null; S.seen = null; S.start = null; S.startFail = null; save(); renderAll();
+      } else startNext();
       break;
+
+    /* queue */
     case 'import': if (await requirePin('import songs')) openImport(); break;
     case 'q-top': moveQueue(i, 0); break;
     case 'q-up': moveQueue(i, i - 1); break;
     case 'q-down': moveQueue(i, i + 1); break;
     case 'q-del': moveQueue(i, -1); break;
+
+    /* tonight */
     case 'save-playlist': saveHistoryPlaylist(); break;
     case 'clear-history':
-      if (await requirePin('clear tonight’s list')) {
-        if (await confirmDialog({ title: 'Clear tonight’s list?', body: 'This also resets the "already sung" warnings.', buttons: [{label:'Clear', value:true, cls:'btn-danger-solid'},{label:'Cancel', value:null}] })) {
-          S.history = S.now ? S.history.filter(h => h.playId === S.now.playId) : []; save(); renderAll();
-        }
+      if (await requirePin('clear tonight’s list') &&
+          await confirmDialog({ title: 'Clear tonight’s list?', body: 'This also resets the "already sung" warnings.', buttons: yesNo('Clear') })) {
+        S.history = S.now ? S.history.filter(h => h.playId === S.now.playId) : []; save(); renderAll();
       }
       break;
-    case 'f-resume':
-      if (await requirePin('take Spotify back')) {
-        const pos = S.seen && S.now && S.seen.playId === S.now.playId ? S.seen.progress : 0;
-        try { await playEntry(S.now, { resume: true, positionMs: pos }); } catch(e){}
+
+    /* banner */
+    case 'f-retry':
+      if (S.now) {
+        S.startFail = null;
+        S.start = { playId: S.now.playId, sentAt: Date.now(), attempts: 2, pos: 0, nudged: false };
+        renderBanner(); renderNow();
+        try { await playOnDevice(S.now.uri, 0); } catch(e){ S.startFail = { msg: explainPlayError(e) }; renderBanner(); }
+        schedulePoll(2000);
       }
+      break;
+    case 'f-skipfail': skipFailedSong(); break;
+    case 'f-resume':
+      if (S.now && await requirePin('take Spotify back')) { try { await playEntry(S.now, { resume: true, positionMs: resumePosition() }); } catch(e){} }
       break;
     case 'f-next': if (await requirePin('take Spotify back')) startNext(); break;
-    case 'f-retry':
-      if (S.now && S.seen) { S.stuck = false; S.stuckReason = ''; S.seen.retries = 1; renderForeign(); renderNow(); retryStart(); }
-      break;
-    case 'f-dismiss': S.dismissedForeign = (S.foreign && S.foreign.uri) || 'nothing'; S.foreign = null; renderForeign(); break;
+    case 'f-dismiss': S.dismissedForeign = (S.foreign && S.foreign.uri) || 'nothing'; S.foreign = null; renderBanner(); break;
   }
 });
 $('#q').addEventListener('input', e => onSearchInput(e.target.value));
 $('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(searchTimer); if (S.search.q.trim()) doSearch(false); e.target.blur(); } });
-window.matchMedia('(min-width: 900px)').addEventListener('change', () => { if (!isWide() && S.tab !== 'search' && !S.queue.length) S.tab = 'search'; renderTabs(); });
+window.matchMedia('(min-width: 900px)').addEventListener('change', () => renderTabs());
 
-/* =========================================================
-   Boot
-   ========================================================= */
+/* =====================================================================
+   Start up
+   ===================================================================== */
 (async function boot(){
   if (!window.isSecureContext || !crypto.subtle) {
     document.body.innerHTML = '<div class="screen"><div class="card"><h1>Needs https</h1><p>Open this page from its https:// address (e.g. GitHub Pages) so Spotify login can work.</p></div></div>';
@@ -1609,7 +1592,6 @@ window.matchMedia('(min-width: 900px)').addEventListener('change', () => { if (!
   }
   if (!isWide()) S.tab = 'search';
   await handleCallback();
-  if (S.now && S.seen && S.seen.playId === S.now.playId && !S.seen.confirmed) { S.seen.retries = 2; S.stuck = true; S.stuckReason = 'The app was reloaded before this song started.'; }
   showScreen();
 })();
 </script>
