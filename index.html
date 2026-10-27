@@ -436,6 +436,7 @@ async function api(method, path, body, retry = true){
     if (retry) { await sleep(ra * 1000); return api(method, path, body, false); }
     const e = new Error('Spotify asked us to slow down — try again in a few seconds.'); e.status = 429; throw e;
   }
+  if (path.startsWith('/me/player/play')) S.lastPlay = { status: r.status, at: Date.now() };
   if (r.status === 204 || r.status === 202) { logCall(method, path, r.status); return null; }
   const text = await r.text(); let j = null; try { j = text ? JSON.parse(text) : null; } catch(e){}
   if (!r.ok) {
@@ -960,6 +961,13 @@ function stuckDiag(){
   let d = p && p.deviceName
     ? `Spotify says: ${p.uri ? (p.isPlaying ? 'playing' : 'paused on') + ' “' + esc(p.name) + '”' : 'nothing loaded'} on ${esc(p.deviceName)}.`
     : 'Spotify says: no device is active right now.';
+  const lp = S.lastPlay;
+  if (lp) d += lp.status === 202
+    ? ` Last play request (${fmtClock(lp.at)}): Spotify answered 202 — it couldn’t reach the speaker. Quit Spotify on it completely and reopen it.`
+    : lp.status === 204 || lp.status === 200
+    ? ` Last play request (${fmtClock(lp.at)}): Spotify accepted it, but the speaker didn’t load the song. Quit and reopen Spotify on it, or play any song there once by hand.`
+    : ` Last play request (${fmtClock(lp.at)}): HTTP ${lp.status}.`;
+  else d += ' No play request has been sent yet — tap Try again.';
   if (S.stuckReason) d += ' Last error: ' + esc(S.stuckReason);
   return d;
 }
@@ -1144,7 +1152,7 @@ async function openSettings(){
       <button class="btn btn-ghost" data-act="diag">🩺 Diagnostics</button>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
-      <div class="info-line">Karaoke Queue v1.6</div>
+      <div class="info-line">Karaoke Queue v1.7</div>
     </div>`, {
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
@@ -1218,7 +1226,7 @@ async function openDiagnostics(){
   function draw(){
     const p = S.player, sn = S.seen;
     m.el.querySelector('#diagBody').innerHTML = esc([
-      'Version: v1.6',
+      'Version: v1.7',
       'Account: ' + who,
       'Scopes: ' + (S.tokens && S.tokens.scope != null ? S.tokens.scope : 'unknown (logged in before v1.3)'),
       'Speaker: ' + (S.device ? `${S.device.name} [${S.device.type}] id=${S.device.id.slice(0, 8)}…` : 'none'),
