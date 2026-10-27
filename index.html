@@ -404,10 +404,11 @@ function refreshToken(){
   return refreshing;
 }
 
-const apiLog = [], quotaUntil = {};   // recent calls, shown in Settings → Diagnostics
+const apiLog = LS.get('apilog', []), quotaUntil = {};   // recent calls, shown in Settings → Diagnostics
 function logCall(method, path, status, note){
   apiLog.push({ at: Date.now(), method, path: path.split('?')[0] + (path.includes('device_id') ? ' [device]' : ''), status, note: note || '' });
   if (apiLog.length > 60) apiLog.shift();
+  LS.set('apilog', apiLog);
 }
 async function api(method, path, body, retry = true){
   if (!S.tokens) throw new Error('Not logged in to Spotify');
@@ -568,6 +569,7 @@ function addToQueue(entry, where){
 
 let advancing = false, endTimer = null, repeatOffFor = null;
 async function playEntry(entry, { resume = false, positionMs = 0 } = {}){
+  if (!(positionMs > 0 && positionMs < entry.duration - 5000)) positionMs = 0;
   if (!S.device) { openDevicePicker('Pick the speaker first, then try again.'); throw new Error('no device'); }
   try{
     await sendPlay(entry, positionMs, 'normal');
@@ -707,7 +709,7 @@ async function poll(){
   S.player = item
     ? { uri: item.uri, name: item.name, artists: (item.artists||[]).map(a => a.name).join(', '), progress: st.progress_ms || 0,
         duration: item.duration_ms || 0, isPlaying: !!st.is_playing, at: Date.now(), deviceName: st.device && st.device.name, deviceId: st.device && st.device.id }
-    : { uri: null, isPlaying: false, progress: 0, duration: 0, at: Date.now(), deviceId: st && st.device && st.device.id };
+    : { uri: null, isPlaying: false, progress: 0, duration: 0, at: Date.now(), deviceId: st && st.device && st.device.id, deviceName: st && st.device && st.device.name };
   evaluate();
   renderNow(); renderForeign();
   schedulePoll(nextPollDelay());
@@ -1142,7 +1144,7 @@ async function openSettings(){
       <button class="btn btn-ghost" data-act="diag">🩺 Diagnostics</button>
       <button class="btn btn-ghost" data-act="logout">Log out of Spotify</button>
       <button class="btn btn-ghost" data-act="close">Close</button>
-      <div class="info-line">Karaoke Queue v1.5</div>
+      <div class="info-line">Karaoke Queue v1.6</div>
     </div>`, {
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
@@ -1177,10 +1179,31 @@ async function openSettings(){
 async function openDiagnostics(){
   const m = openModal(`<h2>🩺 Diagnostics</h2><p>Take a screenshot of this if something isn’t working.</p>
     <div id="diagBody" style="font:13px/1.5 ui-monospace,Menlo,monospace;color:var(--text);-webkit-user-select:text;user-select:text;word-break:break-word"></div>
-    <div class="stack"><button class="btn btn-ghost" data-act="test">▶ Test: list devices + playback state</button><button class="btn btn-ghost" data-act="close">Close</button></div>`, {
+    <div class="stack"><button class="btn btn-ghost" data-act="test">▶ Test: list devices + playback state</button>
+    <button class="btn btn-cyan" data-act="testplay">🔊 Test: play ${S.now ? 'the current song' : 'the next song'} on the speaker</button><button class="btn btn-ghost" data-act="close">Close</button></div>`, {
     wide: true,
     async onClick(act, el, mm){
       if (act === 'close') mm.close();
+      if (act === 'testplay') {
+        const e = S.now || S.queue[0];
+        if (!e || !S.device) { extra = 'Nothing to play (queue empty or no speaker).'; return draw(); }
+        extra = 'Testing… ' + e.name; draw();
+        const out = [];
+        try {
+          if (Date.now() > S.tokens.expiresAt) await refreshToken();
+          const hdr = { Authorization: 'Bearer ' + S.tokens.access, 'Content-Type': 'application/json' };
+          const r = await fetch(API + '/me/player/play?device_id=' + encodeURIComponent(S.device.id), { method: 'PUT', headers: hdr, body: JSON.stringify({ uris: [e.uri] }) });
+          const t = await r.text();
+          out.push(`PLAY ${e.uri} → HTTP ${r.status}${t ? ' ' + t.slice(0, 300) : ''}`);
+          await sleep(3000);
+          const r2 = await fetch(API + '/me/player', { headers: { Authorization: 'Bearer ' + S.tokens.access } });
+          const t2 = r2.status === 204 ? '' : await r2.text();
+          let st = null; try { st = t2 ? JSON.parse(t2) : null; } catch(x){}
+          out.push(`STATE after 3s → HTTP ${r2.status}: ` + (st ? `${st.is_playing ? 'playing' : 'paused'} "${st.item ? st.item.name + '" ' + st.item.uri : '-"'} on ${st.device ? st.device.name : '?'}${st.actions && st.actions.disallows ? ' disallows=' + Object.keys(st.actions.disallows).join(',') : ''}` : 'no active device'));
+          if (st && st.item && st.item.uri === e.uri && S.now === e) { S.seen = { playId: e.playId, progress: st.progress_ms || 0, at: Date.now(), playing: !!st.is_playing, confirmed: !!st.is_playing, retries: 0, startPos: 0 }; S.stuck = false; S.stuckReason = ''; save(); renderAll(); }
+        } catch(err){ out.push('ERROR ' + err.message); }
+        extra = out.join('\n'); draw();
+      }
       if (act === 'test') {
         for (const k in quotaUntil) delete quotaUntil[k];
         try { const d = await api('GET', '/me/player/devices'); extra = 'Devices: ' + (((d && d.devices) || []).map(x => `${x.name} [${x.type}${x.is_active ? ', active' : ''}${x.is_restricted ? ', RESTRICTED' : ''}] id=${x.id.slice(0, 8)}…`).join(' | ') || 'none'); }
@@ -1195,12 +1218,13 @@ async function openDiagnostics(){
   function draw(){
     const p = S.player, sn = S.seen;
     m.el.querySelector('#diagBody').innerHTML = esc([
-      'Version: v1.5',
+      'Version: v1.6',
       'Account: ' + who,
       'Scopes: ' + (S.tokens && S.tokens.scope != null ? S.tokens.scope : 'unknown (logged in before v1.3)'),
       'Speaker: ' + (S.device ? `${S.device.name} [${S.device.type}] id=${S.device.id.slice(0, 8)}…` : 'none'),
       'Last poll: ' + (S.pollError ? 'ERROR ' + S.pollError : p ? `${p.uri ? (p.isPlaying ? 'playing' : 'paused') + ' "' + p.name + '"' : 'nothing'} on ${p.deviceName || '(no active device)'} — ${Math.round((Date.now() - p.at) / 1000)}s ago` : 'none yet'),
-      'Now: ' + (S.now ? `${S.now.name} confirmed=${!!(sn && sn.confirmed)} retries=${sn ? sn.retries || 0 : '-'} stuck=${!!S.stuck}` : 'nothing'),
+      'Now: ' + (S.now ? `${S.now.name} ${S.now.uri} confirmed=${!!(sn && sn.confirmed)} retries=${sn ? sn.retries || 0 : '-'} stuck=${!!S.stuck}${S.stuckReason ? ' reason=' + S.stuckReason : ''}` : 'nothing'),
+      'Next in queue: ' + (S.queue[0] ? `${S.queue[0].name} ${S.queue[0].uri}` : '-'),
       'Queue: ' + S.queue.length + ' · running=' + S.running,
       extra,
       '— Recent Spotify calls (newest first) —',
@@ -1574,6 +1598,7 @@ window.matchMedia('(min-width: 900px)').addEventListener('change', () => { if (!
   }
   if (!isWide()) S.tab = 'search';
   await handleCallback();
+  if (S.now && S.seen && S.seen.playId === S.now.playId && !S.seen.confirmed) { S.seen.retries = 2; S.stuck = true; S.stuckReason = 'The app was reloaded before this song started.'; }
   showScreen();
 })();
 </script>
