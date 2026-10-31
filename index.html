@@ -62,12 +62,12 @@
   .top-right{display:flex;gap:8px;align-items:center;min-width:0}
 
   /* ---------- layout ---------- */
-  .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:0 20px 20px;height:calc(100vh - 78px);height:calc(100dvh - 78px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  .layout{display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:16px;padding:0 20px 20px;height:calc(100vh - 78px);height:calc(100dvh - 78px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;min-height:0;overflow:hidden}
   .side{display:flex;flex-direction:column;gap:12px;min-height:0}
   .tab-body{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .tabs{display:flex;gap:0;border-bottom:1px solid var(--line)}
-  .tab{flex:1;height:44px;font-weight:600;font-size:13px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab{flex:1;height:48px;font-weight:600;font-size:15px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
   .tab.active{color:var(--text);border-bottom-color:var(--gold)}
   .tab .count{display:inline-block;margin-left:8px;color:var(--gold);letter-spacing:0;font-variant-numeric:tabular-nums}
   .tab-search{display:none}
@@ -117,44 +117,48 @@
   .badge-e{color:var(--dim);border:1px solid var(--line2)}
   .more{display:flex;margin:10px auto 0}
 
-  /* ---------- now showing ---------- */
-  .now-card{background:var(--panel);border:1px solid var(--line);border-top:2px solid var(--gold);border-radius:var(--radius);padding:18px}
-  .now-row{display:flex;gap:18px;align-items:center}
-  .now-art{width:92px;height:92px;border-radius:4px;object-fit:cover;flex:none;box-shadow:0 8px 24px #0009}
-  .now-art.ph{display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:40px;color:var(--gold);background:var(--panel2);border:1px solid var(--line)}
-  .now-kicker{font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--gold)}
-  .now-label{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1.15;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .now-song{font-size:15px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ---------- now showing: same weight as the queue, just a gold edge ---------- */
+  .now-card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:var(--radius);padding:14px 16px 0;overflow:hidden}
+  .now-strip{display:flex;align-items:center;gap:14px;padding-bottom:12px}
+  .now-strip.idle{padding:4px 0 14px}
   .now-main{flex:1;min-width:0}
-  .bar{height:3px;border-radius:2px;background:var(--line2);margin:16px 0 6px;overflow:hidden}
+  .now-kicker{font-size:13px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--gold)}
+  .now-time{letter-spacing:0;font-weight:500;color:var(--dim);margin-left:8px;font-variant-numeric:tabular-nums}
+  .now-title{font-size:30px;font-weight:600;line-height:1.15;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .now-title.serif-i{font-family:var(--serif);font-style:italic;font-weight:500}
+  .now-sub{font-size:19px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .now-ctrls{display:flex;gap:10px;flex:none}
+  .round-btn{position:relative;width:64px;height:64px;border-radius:50%;border:1px solid var(--line2);background:var(--panel2);color:var(--text);display:flex;align-items:center;justify-content:center}
+  .round-btn > svg{width:26px;height:26px}
+  .round-btn:active{background:var(--line2)}
+  .corner-lock{position:absolute;right:-2px;bottom:-2px;width:22px;height:22px;border-radius:50%;background:var(--panel);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .corner-lock .lk{margin:0;width:10px;height:12px}
+  .bar{height:3px;background:var(--line2);margin:0 -16px;overflow:hidden}
   .bar>i{display:block;height:100%;background:var(--gold);width:0}
-  .times{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
-  .now-ctrls{display:flex;gap:10px;margin-top:14px}
-  .now-ctrls .btn{flex:1;min-height:46px;font-size:15px}
-  .now-empty{text-align:center;padding:6px 4px}
-  .now-empty .t{font-family:var(--serif);font-size:26px;font-style:italic;margin-bottom:4px}
-  .now-empty .s{color:var(--muted);margin-bottom:14px}
+  .now-strip .btn-primary{min-height:56px;font-size:17px;padding:0 24px;flex:none}
 
-  /* ---------- queue ---------- */
-  .q-list{list-style:none;margin:0;padding:6px 10px}
-  .q-item{display:flex;align-items:center;gap:12px;padding:10px 4px}
+  /* ---------- queue: big, legible from across the room ---------- */
+  .q-list{list-style:none;margin:0;padding:4px 14px}
+  .q-item{display:flex;align-items:center;gap:16px;padding:16px 4px;min-height:100px;cursor:pointer}
   .q-item+.q-item{border-top:1px solid var(--line)}
-  .q-pos{width:26px;text-align:center;font-family:var(--serif);color:var(--dim);font-size:20px;flex:none;font-variant-numeric:tabular-nums}
+  .q-item:active{background:var(--panel2)}
+  .q-pos{width:40px;text-align:center;font-family:var(--serif);color:var(--dim);font-size:34px;flex:none;font-variant-numeric:tabular-nums;line-height:1}
   .q-item.next .q-pos{color:var(--gold)}
-  .q-wait{text-align:right;font-size:13px;font-weight:600;color:var(--text);flex:none;font-variant-numeric:tabular-nums}
+  .q-main{flex:1;min-width:0}
+  .q-title{font-size:30px;font-weight:600;line-height:1.15;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  .q-sub{font-size:19px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .q-wait{text-align:right;font-size:19px;font-weight:600;color:var(--text);flex:none;font-variant-numeric:tabular-nums;min-width:84px}
   .q-item.next .q-wait{color:var(--gold-hi)}
-  .q-wait small{display:block;color:var(--dim);font-weight:400;font-size:12px}
-  .q-actions{display:flex;gap:4px;flex:none}
-  .q-btn{width:38px;height:38px;border-radius:6px;border:1px solid var(--line);font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
-  .q-btn.del{color:var(--red-text)}
-  .q-btn[disabled]{opacity:.25;pointer-events:none}
-  .secret{color:var(--gold);font-style:italic}
-  .lock-hint{font-size:12px;color:var(--dim);text-align:center;padding:6px 0 14px}
+  .q-wait small{display:block;color:var(--dim);font-weight:400;font-size:15px;margin-top:2px}
+  .secret{color:var(--gold);font-style:italic;font-family:var(--serif);font-weight:500}
+  .lock-hint{font-size:14px;color:var(--dim);text-align:center;padding:10px 0 18px}
 
   /* ---------- tonight ---------- */
   .h-head{display:flex;gap:8px;padding:12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .h-head .btn{min-height:42px;font-size:14px}
-  .h-time{color:var(--dim);font-size:13px;width:62px;flex:none;font-variant-numeric:tabular-nums}
+  .h-time{color:var(--dim);font-size:16px;width:76px;flex:none;font-variant-numeric:tabular-nums}
+  .q-item.hist{cursor:default;min-height:84px}
+  .q-item.hist .q-title{font-size:24px}
 
   /* ---------- banner ---------- */
   .banner{margin:0 20px 14px;padding:12px 16px;border-radius:var(--radius);background:#1d1611;border:1px solid #6e5631;border-left:3px solid var(--gold);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -330,7 +334,7 @@
    One shared iPad, one Spotify Premium account, music on another device.
    The app owns the queue and hands Spotify one song at a time.
    ===================================================================== */
-const VERSION = '2.2';
+const VERSION = '2.3';
 
 /* ---------------- storage ---------------- */
 const LS = {
@@ -862,43 +866,41 @@ function nowProgress(){
   return Math.min(e.duration, p.progress + (p.isPlaying ? Date.now() - p.at : 0));
 }
 
+const ICON = {
+  play:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="4" width="4.5" height="16" rx="1"/><rect x="14" y="4" width="4.5" height="16" rx="1"/></svg>',
+  skip:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5.2v13.6a1 1 0 0 0 1.53.85L16 13v5.5a1 1 0 0 0 1 1h1.5a1 1 0 0 0 1-1v-13a1 1 0 0 0-1-1H17a1 1 0 0 0-1 1V11L5.53 4.35A1 1 0 0 0 4 5.2z"/></svg>'
+};
+
 function renderNow(){
   const el = $('#now'); if (!el) return;
   const e = S.now;
   if (!e) {
-    if (S.queue.length && !S.running) {
-      el.innerHTML = `<div class="now-empty"><div class="t">The house is seated.</div>
-        <div class="s">${S.queue.length} song${S.queue.length > 1 ? 's' : ''} in the queue.</div>
-        <button class="btn btn-primary btn-block" data-act="start">Start the show</button></div>`;
-    } else if (S.queue.length) {
-      el.innerHTML = `<div class="now-empty"><div class="t">Intermission.</div><div class="s">Tap to keep going.</div>
-        <button class="btn btn-primary btn-block" data-act="start">Play the next song</button></div>`;
-    } else {
-      el.innerHTML = `<div class="now-empty"><div class="t">The stage is dark.</div>
-        <div class="s">${S.running ? 'The next song added will start right away.' : 'Search for a song to get the show started.'}</div></div>`;
-    }
+    const msg = S.queue.length && !S.running ? ['The house is seated.', `${S.queue.length} song${S.queue.length > 1 ? 's' : ''} waiting`, 'Start the show']
+              : S.queue.length ? ['Intermission.', 'Paused between songs', 'Play the next song']
+              : ['The stage is dark.', S.running ? 'The next song added starts right away' : 'Search for a song to get started', ''];
+    el.innerHTML = `<div class="now-strip idle">
+      <div class="now-main"><div class="now-title serif-i">${msg[0]}</div><div class="now-sub">${msg[1]}</div></div>
+      ${msg[2] ? `<button class="btn btn-primary" data-act="start">${msg[2]}</button>` : ''}</div>`;
     return;
   }
   const p = S.player, ours = sameTrack(p, e), playing = ours && p.isPlaying;
   const starting = S.start && S.start.playId === e.playId && !S.start.ok;
   const prog = nowProgress();
-  const kicker = starting ? (S.startFail ? 'Couldn’t start' : `Starting on ${esc(S.device ? S.device.name : 'speaker')}…`)
-               : playing ? 'Now showing' : ours ? 'Paused' : 'On stage';
-  el.innerHTML = `
-    <div class="now-row">
-      ${e.art ? `<img class="now-art" src="${esc(e.art)}" alt="">` : `<div class="now-art ph">${esc((e.name || '♪').charAt(0).toUpperCase())}</div>`}
+  const kicker = starting ? (S.startFail ? 'Couldn’t start' : 'Starting…') : playing ? 'Now showing' : ours ? 'Paused' : 'On stage';
+  const sub = [esc(e.artists), e.label ? 'Singer: ' + esc(e.label) : ''].filter(Boolean).join(' · ');
+  el.innerHTML = `<div class="now-strip">
       <div class="now-main">
-        <div class="now-kicker">${kicker}</div>
-        <div class="now-label">${esc(e.label || e.name)}</div>
-        <div class="now-song">${e.label ? esc(e.name) + ' · ' : ''}${esc(e.artists)}</div>
+        <div class="now-kicker">${kicker} <span class="now-time"><span id="nowPos">${fmtDur(prog)}</span> / ${fmtDur(e.duration)}</span></div>
+        <div class="now-title">${esc(e.name)}</div>
+        <div class="now-sub">${sub}</div>
+      </div>
+      <div class="now-ctrls">
+        <button class="round-btn" data-act="${playing ? 'pause' : 'resume'}" aria-label="${playing ? 'Pause' : 'Play'}">${playing ? ICON.pause : ICON.play}</button>
+        <button class="round-btn" data-act="skip" aria-label="Skip">${ICON.skip}${isUnlocked() ? '' : '<span class="corner-lock">' + LOCK + '</span>'}</button>
       </div>
     </div>
-    <div class="bar"><i id="nowBar" style="width:${e.duration ? (prog / e.duration * 100).toFixed(1) : 0}%"></i></div>
-    <div class="times"><span id="nowPos">${fmtDur(prog)}</span><span id="nowLeft">-${fmtDur(e.duration - prog)}</span></div>
-    <div class="now-ctrls">
-      <button class="btn btn-ghost" data-act="${playing ? 'pause' : 'resume'}">${playing ? 'Pause' : 'Resume'}</button>
-      <button class="btn btn-ghost" data-act="skip">Skip${lockMark()}</button>
-    </div>`;
+    <div class="bar"><i id="nowBar" style="width:${e.duration ? (prog / e.duration * 100).toFixed(1) : 0}%"></i></div>`;
 }
 
 function renderTabs(){
@@ -920,27 +922,19 @@ function renderQueue(){
       <button class="btn btn-ghost" data-act="import">Import a playlist or CSV${lockMark()}</button></div>`;
     return;
   }
-  const lock = isUnlocked() ? '' : ' (host PIN)';
   let acc = currentRemaining();
   el.innerHTML = `<ul class="q-list">${S.queue.map((e, i) => {
     const wait = acc; acc += e.duration;
-    const titleLine = e.hidden ? `<span class="secret">Sneak preview</span>` : `${esc(e.name)} · ${esc(e.artists)}`;
-    const main = e.label
-      ? `<div class="t1">${esc(e.label)}</div><div class="t2">${titleLine}</div>`
-      : e.hidden ? `<div class="t1 secret">Sneak preview</div><div class="t2">${fmtDur(e.duration)}</div>`
-      : `<div class="t1">${esc(e.name)}</div><div class="t2">${esc(e.artists)}</div>`;
-    return `<li class="q-item ${i === 0 ? 'next' : ''}">
-      <div class="q-pos">${i + 1}</div>${e.hidden ? '<div class="art-ph">?</div>' : artHtml(e.art, e.name)}
-      <div class="r-main">${main}</div>
-      <div class="q-wait">${i === 0 && S.now ? 'Up next' : i === 0 ? 'First' : fmtWait(wait)}<small>${S.now || i > 0 ? '≈ ' + fmtClock(Date.now() + wait) : ''}</small></div>
-      <div class="q-actions">
-        <button class="q-btn" data-act="q-top" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Move to top${lock}">⤒</button>
-        <button class="q-btn" data-act="q-up" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Move up${lock}">▲</button>
-        <button class="q-btn" data-act="q-down" data-i="${i}" ${i === S.queue.length - 1 ? 'disabled' : ''} title="Move down${lock}">▼</button>
-        <button class="q-btn del" data-act="q-del" data-i="${i}" title="Remove${lock}">✕</button>
-      </div></li>`;
+    const title = e.hidden ? `<span class="secret">Sneak preview</span>` : esc(e.name);
+    const sub = [e.hidden ? '' : esc(e.artists), e.label ? 'Singer: ' + esc(e.label) : ''].filter(Boolean).join(' · ') || fmtDur(e.duration);
+    const when = i === 0 && S.now ? 'Up next' : i === 0 ? 'First' : fmtWait(wait);
+    return `<li class="q-item ${i === 0 ? 'next' : ''}" data-act="q-open" data-i="${i}">
+      <div class="q-pos">${i + 1}</div>
+      <div class="q-main"><div class="q-title">${title}</div><div class="q-sub">${sub}</div></div>
+      <div class="q-wait">${when}<small>${S.now || i > 0 ? fmtClock(Date.now() + wait) : ''}</small></div>
+    </li>`;
   }).join('')}</ul>
-  ${isUnlocked() ? '' : `<div class="lock-hint">Reordering and removing need the host PIN${LOCK}</div>`}`;
+  <div class="lock-hint">Host: tap a song to move or remove it${lockMark()}</div>`;
 }
 
 function renderHistory(){
@@ -952,8 +946,8 @@ function renderHistory(){
       <button class="btn btn-ghost" data-act="clear-history" ${S.history.length ? '' : 'disabled'}>Clear</button>
     </div>
     ${list.length ? `<ul class="q-list">${list.map(h => `
-      <li class="q-item"><div class="h-time">${fmtClock(h.playedAt)}</div>${artHtml(h.art, h.name)}
-        <div class="r-main"><div class="t1">${esc(h.label || h.name)}</div><div class="t2">${h.label ? esc(h.name) + ' · ' : ''}${esc(h.artists)}</div></div>
+      <li class="q-item hist"><div class="h-time">${fmtClock(h.playedAt)}</div>
+        <div class="q-main"><div class="q-title">${esc(h.name)}</div><div class="q-sub">${esc(h.artists)}${h.label ? ' · Singer: ' + esc(h.label) : ''}</div></div>
       </li>`).join('')}</ul>`
     : `<div class="empty"><div class="big">The credits roll here.</div>Every song sung tonight will be listed.</div>`}`;
 }
@@ -1025,7 +1019,6 @@ setInterval(() => {
     const bar = $('#nowBar'), pos = $('#nowPos'), left = $('#nowLeft');
     if (bar) bar.style.width = (prog / e.duration * 100).toFixed(1) + '%';
     if (pos) pos.textContent = fmtDur(prog);
-    if (left) left.textContent = '-' + fmtDur(e.duration - prog);
   }
   const u = isUnlocked();
   if (u !== lastUnlocked) { lastUnlocked = u; renderQueue(); renderNow(); }
@@ -1137,6 +1130,30 @@ async function playNowFlow(entry){
   }
   clearTimeout(endTimer);
   try { await playEntry(entry); return true; } catch(e){ save(); renderAll(); return false; }
+}
+
+// Host taps a queue row → move / remove options (keeps the rows free of buttons so titles can be big)
+async function openQueueItem(i){
+  const item = S.queue[i]; if (!item) return;
+  if (!(await requirePin('change the queue'))) return;
+  const name = item.hidden ? 'Sneak preview' : esc(item.name);
+  const last = S.queue.length - 1;
+  openModal(`<h2>${name}</h2><p>${item.label ? 'Singer: ' + esc(item.label) + ' · ' : ''}#${i + 1} in line</p>
+    <div class="stack">
+      <button class="btn btn-ghost" data-act="top" ${i === 0 ? 'disabled' : ''}>Move to the top</button>
+      <div class="row2"><button class="btn btn-ghost" data-act="up" ${i === 0 ? 'disabled' : ''}>Move up one</button>
+        <button class="btn btn-ghost" data-act="down" ${i === last ? 'disabled' : ''}>Move down one</button></div>
+      <button class="btn btn-danger" data-act="del">Remove from the queue</button>
+      <button class="btn btn-ghost" data-act="cancel">Cancel</button>
+    </div>`, {
+    onClick(act, el, mm){
+      mm.close();
+      if (act === 'top') moveQueue(i, 0);
+      if (act === 'up') moveQueue(i, i - 1);
+      if (act === 'down') moveQueue(i, i + 1);
+      if (act === 'del') moveQueue(i, -1);
+    }
+  });
 }
 
 async function moveQueue(i, to){
@@ -1602,6 +1619,7 @@ document.addEventListener('click', async ev => {
 
     /* queue */
     case 'import': if (await requirePin('import songs')) openImport(); break;
+    case 'q-open': openQueueItem(i); break;
     case 'q-top': moveQueue(i, 0); break;
     case 'q-up': moveQueue(i, i - 1); break;
     case 'q-down': moveQueue(i, i + 1); break;
