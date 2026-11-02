@@ -157,6 +157,8 @@
   .q-arrow:active{background:var(--line2)}
   .q-arrow[disabled]{opacity:.2;pointer-events:none}
   .q-item.moved{animation:moved 1.6s ease-out}
+  #tabQueue .q-item{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;transition:background .3s}
+  #tabQueue .q-item.pressing{background:#c8a35a1a;transition:background .55s}
   @keyframes moved{0%,35%{background:#c8a35a26}100%{background:transparent}}
   .lock-hint{font-size:14px;color:var(--dim);text-align:center;padding:10px 0 18px}
 
@@ -341,7 +343,7 @@
    One shared iPad, one Spotify Premium account, music on another device.
    The app owns the queue and hands Spotify one song at a time.
    ===================================================================== */
-const VERSION = '2.4';
+const VERSION = '2.5';
 
 /* ---------------- storage ---------------- */
 const LS = {
@@ -948,7 +950,7 @@ function renderQueue(){
       </div>
     </li>`;
   }).join('')}</ul>
-  <div class="lock-hint">Host: use the arrows to reorder, or tap a song to move it to the top or remove it${lockMark()}</div>`;
+  <div class="lock-hint">Host: arrows reorder · tap a song for more · press and hold to rename or make it a sneak preview${lockMark()}</div>`;
 }
 
 function renderHistory(){
@@ -1157,6 +1159,7 @@ async function openQueueItem(i){
       <button class="btn btn-ghost" data-act="top" ${i === 0 ? 'disabled' : ''}>Move to the top</button>
       <div class="row2"><button class="btn btn-ghost" data-act="up" ${i === 0 ? 'disabled' : ''}>Move up one</button>
         <button class="btn btn-ghost" data-act="down" ${i === last ? 'disabled' : ''}>Move down one</button></div>
+      <button class="btn btn-ghost" data-act="edit">Rename / sneak preview</button>
       <button class="btn btn-danger" data-act="del">Remove from the queue</button>
       <button class="btn btn-ghost" data-act="cancel">Cancel</button>
     </div>`, {
@@ -1166,8 +1169,40 @@ async function openQueueItem(i){
       if (act === 'up') moveQueue(i, i - 1);
       if (act === 'down') moveQueue(i, i + 1);
       if (act === 'del') moveQueue(i, -1);
+      if (act === 'edit') openEditItem(i);
     }
   });
+}
+
+// Long-press a queue song (or "Rename / sneak preview" in its menu): set the name shown in the queue
+// and switch sneak preview on/off — handy after importing a playlist.
+async function openEditItem(i){
+  const item = S.queue[i]; if (!item) return;
+  if (!(await requirePin('rename a song'))) return;
+  const qid = item.qid;
+  let hidden = !!item.hidden;
+  const m = openModal(`
+    <h2>Edit queue entry</h2>
+    <p>#${i + 1} in line · ${esc(item.name)} — ${esc(item.artists)}</p>
+    <label class="field"><span>Name in the queue (singer or code name)</span>
+      <input id="editLabel" maxlength="40" value="${esc(item.label || '')}" placeholder="Leave blank for no name" autocomplete="off" autocorrect="off" spellcheck="false"></label>
+    <button class="toggle ${hidden ? 'on' : ''}" data-act="toggle-hidden"><span class="sw"></span>
+      <span><b>Sneak preview</b><small>Keep the song title hidden in the queue until it plays</small></span></button>
+    <div class="stack">
+      <button class="btn btn-primary" data-act="save">Save</button>
+      <button class="btn btn-ghost" data-act="cancel">Cancel</button>
+    </div>`, {
+    onClick(act, el, mm){
+      if (act === 'toggle-hidden') { hidden = !hidden; el.classList.toggle('on', hidden); }
+      if (act === 'cancel') mm.close();
+      if (act === 'save') {
+        const it = S.queue.find(e => e.qid === qid);       // queue may have shifted while the sheet was open
+        if (it) { it.label = m.el.querySelector('#editLabel').value.trim(); it.hidden = hidden; save(); renderAll(); toast('Saved', 'ok'); }
+        mm.close();
+      }
+    }
+  });
+  setTimeout(() => { const f = m.el.querySelector('#editLabel'); if (f) f.focus(); }, 50);
 }
 
 let moveFlashTimer = null;
@@ -1671,6 +1706,30 @@ document.addEventListener('click', async ev => {
     case 'f-dismiss': S.dismissedForeign = (S.foreign && S.foreign.uri) || 'nothing'; S.foreign = null; renderBanner(); break;
   }
 });
+/* Long-press a queue song to rename it / toggle sneak preview */
+let pressTimer = null, pressStart = null, suppressClick = false;
+function cancelPress(){ clearTimeout(pressTimer); pressTimer = null; pressStart = null; }
+document.addEventListener('pointerdown', ev => {
+  const row = ev.target.closest('#tabQueue .q-item[data-i]');
+  if (!row || ev.target.closest('.q-arrow')) return;
+  pressStart = { x: ev.clientX, y: ev.clientY };
+  const i = +row.dataset.i;
+  row.classList.add('pressing');
+  pressTimer = setTimeout(() => {
+    pressTimer = null; row.classList.remove('pressing');
+    suppressClick = true; setTimeout(() => { suppressClick = false; }, 700);
+    if (navigator.vibrate) try { navigator.vibrate(15); } catch(e){}
+    openEditItem(i);
+  }, 550);
+});
+document.addEventListener('pointermove', ev => {
+  if (pressStart && Math.hypot(ev.clientX - pressStart.x, ev.clientY - pressStart.y) > 10) { cancelPress(); document.querySelectorAll('.q-item.pressing').forEach(r => r.classList.remove('pressing')); }
+});
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => { cancelPress(); document.querySelectorAll('.q-item.pressing').forEach(r => r.classList.remove('pressing')); }));
+document.addEventListener('contextmenu', ev => { if (ev.target.closest('#tabQueue .q-item')) ev.preventDefault(); });
+// swallow the tap that ends a long-press so it doesn't also open the tap menu
+document.addEventListener('click', ev => { if (suppressClick && ev.target.closest('#tabQueue .q-item')) { ev.stopImmediatePropagation(); ev.preventDefault(); suppressClick = false; } }, true);
+
 $('#q').addEventListener('input', e => onSearchInput(e.target.value));
 $('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(searchTimer); if (S.search.q.trim()) doSearch(false); e.target.blur(); } });
 window.matchMedia('(min-width: 900px)').addEventListener('change', () => renderTabs());
