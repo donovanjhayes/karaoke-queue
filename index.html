@@ -151,6 +151,13 @@
   .q-item.next .q-wait{color:var(--gold-hi)}
   .q-wait small{display:block;color:var(--dim);font-weight:400;font-size:15px;margin-top:2px}
   .secret{color:var(--gold);font-style:italic;font-family:var(--serif);font-weight:500}
+  .q-arrows{display:flex;flex-direction:column;gap:6px;flex:none;margin-left:2px}
+  .q-arrow{width:52px;height:40px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);color:var(--text);display:flex;align-items:center;justify-content:center}
+  .q-arrow svg{width:22px;height:22px}
+  .q-arrow:active{background:var(--line2)}
+  .q-arrow[disabled]{opacity:.2;pointer-events:none}
+  .q-item.moved{animation:moved 1.6s ease-out}
+  @keyframes moved{0%,35%{background:#c8a35a26}100%{background:transparent}}
   .lock-hint{font-size:14px;color:var(--dim);text-align:center;padding:10px 0 18px}
 
   /* ---------- tonight ---------- */
@@ -334,7 +341,7 @@
    One shared iPad, one Spotify Premium account, music on another device.
    The app owns the queue and hands Spotify one song at a time.
    ===================================================================== */
-const VERSION = '2.3';
+const VERSION = '2.4';
 
 /* ---------------- storage ---------------- */
 const LS = {
@@ -869,6 +876,8 @@ function nowProgress(){
 const ICON = {
   play:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="4" width="4.5" height="16" rx="1"/><rect x="14" y="4" width="4.5" height="16" rx="1"/></svg>',
+  up:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>',
+  down:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   skip:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5.2v13.6a1 1 0 0 0 1.53.85L16 13v5.5a1 1 0 0 0 1 1h1.5a1 1 0 0 0 1-1v-13a1 1 0 0 0-1-1H17a1 1 0 0 0-1 1V11L5.53 4.35A1 1 0 0 0 4 5.2z"/></svg>'
 };
 
@@ -928,13 +937,18 @@ function renderQueue(){
     const title = e.hidden ? `<span class="secret">Sneak preview</span>` : esc(e.name);
     const sub = [e.hidden ? '' : esc(e.artists), e.label ? 'Singer: ' + esc(e.label) : ''].filter(Boolean).join(' · ') || fmtDur(e.duration);
     const when = i === 0 && S.now ? 'Up next' : i === 0 ? 'First' : fmtWait(wait);
-    return `<li class="q-item ${i === 0 ? 'next' : ''}" data-act="q-open" data-i="${i}">
+    const last = i === S.queue.length - 1;
+    return `<li class="q-item ${i === 0 ? 'next' : ''} ${e.qid === S.movedQid ? 'moved' : ''}" data-act="q-open" data-i="${i}">
       <div class="q-pos">${i + 1}</div>
       <div class="q-main"><div class="q-title">${title}</div><div class="q-sub">${sub}</div></div>
       <div class="q-wait">${when}<small>${S.now || i > 0 ? fmtClock(Date.now() + wait) : ''}</small></div>
+      <div class="q-arrows">
+        <button class="q-arrow" data-act="q-up" data-i="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">${ICON.up}</button>
+        <button class="q-arrow" data-act="q-down" data-i="${i}" ${last ? 'disabled' : ''} aria-label="Move down">${ICON.down}</button>
+      </div>
     </li>`;
   }).join('')}</ul>
-  <div class="lock-hint">Host: tap a song to move or remove it${lockMark()}</div>`;
+  <div class="lock-hint">Host: use the arrows to reorder, or tap a song to move it to the top or remove it${lockMark()}</div>`;
 }
 
 function renderHistory(){
@@ -1156,6 +1170,7 @@ async function openQueueItem(i){
   });
 }
 
+let moveFlashTimer = null;
 async function moveQueue(i, to){
   if (!(await requirePin(to === -1 ? 'remove songs' : 'reorder the queue'))) return;
   const item = S.queue[i]; if (!item) return;
@@ -1165,6 +1180,9 @@ async function moveQueue(i, to){
     S.queue = S.queue.filter(e => e.qid !== item.qid);
   } else {
     S.queue.splice(i, 1); S.queue.splice(Math.max(0, Math.min(to, S.queue.length)), 0, item);
+    // briefly highlight the song that moved so it's easy to follow
+    S.movedQid = item.qid; clearTimeout(moveFlashTimer);
+    moveFlashTimer = setTimeout(() => { S.movedQid = null; renderQueue(); }, 1600);
   }
   save(); renderAll();
 }
